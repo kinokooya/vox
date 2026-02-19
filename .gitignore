@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+*:Zone.Identifier
+
+# Models (large binary files)
+models/
+*.bin
+*.pt
+*.onnx
+*.ct2
+
+# Audio test files
+*.wav
+*.mp3
+*.flac
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+
+# Distribution
+*.whl
+*.tar.gz
