@@ -1,0 +1,33 @@
+stt:
+  engine: "faster-whisper"  # or "sensevoice"
+  faster_whisper:
+    model: "large-v3-turbo"
+    device: "cuda"
+    compute_type: "float16"
+    language: "ja"
+    vad:
+      min_speech_duration_ms: 250
+      min_silence_duration_ms: 500
+  sensevoice:
+    model: "FunAudioLLM/SenseVoiceSmall"
+    device: "cuda"
+    language: "auto"
+
+llm:
+  backend: "ollama"
+  model: "qwen2.5:7b-instruct-q4_K_M"
+  base_url: "http://localhost:11434/v1"
+  temperature: 0.3
+  max_tokens: 1024
+
+hotkey:
+  trigger_key: "alt_r"
+
+audio:
+  sample_rate: 16000
+  channels: 1
+  max_duration_sec: 60
+
+insertion:
+  pre_paste_delay_ms: 50
+  restore_clipboard: true
