@@ -38,6 +38,9 @@ class FasterWhisperEngine(STTEngine):
         if self._model is None:
             raise RuntimeError("Model not loaded. Call load_model() first.")
 
+        if sample_rate != 16000:
+            raise ValueError(f"Expected 16kHz audio, got {sample_rate}Hz")
+
         segments, info = self._model.transcribe(
             audio,
             language=self._config.language,

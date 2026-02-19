@@ -43,12 +43,14 @@ class TextInserter:
             logger.warning("Empty text, skipping insertion")
             return
 
+        captured = False
         original_clipboard = ""
         if self._config.restore_clipboard:
             try:
                 original_clipboard = pyperclip.paste()
+                captured = True
             except Exception:
-                original_clipboard = ""
+                logger.warning("Could not read clipboard, will not restore")
 
         pyperclip.copy(text)
         time.sleep(self._config.pre_paste_delay_ms / 1000.0)
@@ -57,6 +59,9 @@ class TextInserter:
             _send_ctrl_v()
             logger.info("Text inserted: %d chars", len(text))
         finally:
-            if self._config.restore_clipboard:
+            if self._config.restore_clipboard and captured:
                 time.sleep(0.1)  # Wait for paste to complete
-                pyperclip.copy(original_clipboard)
+                try:
+                    pyperclip.copy(original_clipboard)
+                except Exception:
+                    logger.warning("Could not restore clipboard")

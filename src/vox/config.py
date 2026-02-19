@@ -5,12 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class VADConfig(BaseModel):
-    min_speech_duration_ms: int = 250
-    min_silence_duration_ms: int = 500
+    min_speech_duration_ms: int = Field(default=250, gt=0)
+    min_silence_duration_ms: int = Field(default=500, gt=0)
 
 
 class FasterWhisperConfig(BaseModel):
@@ -37,8 +37,8 @@ class LLMConfig(BaseModel):
     backend: str = "ollama"
     model: str = "qwen2.5:7b-instruct-q4_K_M"
     base_url: str = "http://localhost:11434/v1"
-    temperature: float = 0.3
-    max_tokens: int = 1024
+    temperature: float = Field(default=0.3, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=1024, gt=0)
 
 
 class HotkeyConfig(BaseModel):
@@ -46,13 +46,13 @@ class HotkeyConfig(BaseModel):
 
 
 class AudioConfig(BaseModel):
-    sample_rate: int = 16000
-    channels: int = 1
-    max_duration_sec: int = 60
+    sample_rate: int = Field(default=16000, gt=0)
+    channels: int = Field(default=1, gt=0)
+    max_duration_sec: int = Field(default=60, gt=0)
 
 
 class InsertionConfig(BaseModel):
-    pre_paste_delay_ms: int = 50
+    pre_paste_delay_ms: int = Field(default=50, ge=0)
     restore_clipboard: bool = True
 
 
@@ -69,7 +69,7 @@ def load_config(path: Path | None = None) -> AppConfig:
     if path is None:
         path = Path("config.yaml")
     if path.exists():
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         return AppConfig(**data)
     return AppConfig()

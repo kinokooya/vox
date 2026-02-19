@@ -31,6 +31,7 @@ class VoxApp:
         )
         self._processing = False
         self._lock = threading.Lock()
+        self._worker: threading.Thread | None = None
 
     def start(self) -> None:
         """Initialize models and start listening."""
@@ -40,15 +41,20 @@ class VoxApp:
 
         logger.info("Loading STT model...")
         self._stt.load_model()
-        logger.info("STT model loaded (VRAM: ~%dMB)", self._stt.get_vram_usage_mb())
+        vram = self._stt.get_vram_usage_mb()
+        logger.info("STT model loaded (VRAM: ~%dMB)", vram)
 
         self._hotkey.start()
         trigger = self._config.hotkey.trigger_key
         logger.info("=== Vox ready — press and hold %s to speak ===", trigger)
 
     def stop(self) -> None:
-        """Stop the application."""
+        """Stop the application, waiting for any in-flight work."""
         self._hotkey.stop()
+        worker = self._worker
+        if worker is not None and worker.is_alive():
+            logger.info("Waiting for pipeline to finish...")
+            worker.join(timeout=10)
         logger.info("=== Vox stopped ===")
 
     def _on_key_press(self) -> None:
@@ -65,8 +71,9 @@ class VoxApp:
             self._processing = True
         self._hotkey.set_enabled(False)
 
-        # Run pipeline in a background thread to not block the hotkey listener
-        thread = threading.Thread(target=self._process_pipeline, daemon=True)
+        thread = threading.Thread(target=self._process_pipeline)
+        with self._lock:
+            self._worker = thread
         thread.start()
 
     def _process_pipeline(self) -> None:
@@ -104,4 +111,5 @@ class VoxApp:
         finally:
             with self._lock:
                 self._processing = False
+                self._worker = None
             self._hotkey.set_enabled(True)

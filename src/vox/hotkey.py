@@ -71,7 +71,10 @@ class HotkeyListener:
                 return
             self._is_pressed = True
         logger.debug("Trigger key pressed")
-        self._on_press()
+        try:
+            self._on_press()
+        except Exception:
+            logger.exception("Error in on_press callback")
 
     def _handle_release(self, key: Any) -> None:
         if key != self._trigger_key:
@@ -81,4 +84,7 @@ class HotkeyListener:
                 return
             self._is_pressed = False
         logger.debug("Trigger key released")
-        self._on_release()
+        try:
+            self._on_release()
+        except Exception:
+            logger.exception("Error in on_release callback")

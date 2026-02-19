@@ -19,7 +19,9 @@ class AudioRecorder:
     def __init__(self, config: AudioConfig) -> None:
         self._config = config
         self._frames: list[np.ndarray] = []
+        self._frame_count = 0
         self._is_recording = False
+        self._stream: sd.InputStream | None = None
         self._lock = threading.Lock()
         self._max_frames = config.sample_rate * config.max_duration_sec
 
@@ -29,19 +31,26 @@ class AudioRecorder:
             if self._is_recording:
                 return
             self._frames = []
-            self._is_recording = True
+            self._frame_count = 0
 
         rate = self._config.sample_rate
         max_dur = self._config.max_duration_sec
-        logger.info("Recording started (rate=%dHz, max=%ds)", rate, max_dur)
+        try:
+            stream = sd.InputStream(
+                samplerate=rate,
+                channels=self._config.channels,
+                dtype="float32",
+                callback=self._audio_callback,
+            )
+            stream.start()
+        except Exception:
+            logger.exception("Failed to start audio stream")
+            return
 
-        self._stream = sd.InputStream(
-            samplerate=self._config.sample_rate,
-            channels=self._config.channels,
-            dtype="float32",
-            callback=self._audio_callback,
-        )
-        self._stream.start()
+        with self._lock:
+            self._is_recording = True
+            self._stream = stream
+        logger.info("Recording started (rate=%dHz, max=%ds)", rate, max_dur)
 
     def stop(self) -> np.ndarray:
         """Stop recording and return audio as numpy array.
@@ -51,9 +60,15 @@ class AudioRecorder:
         """
         with self._lock:
             self._is_recording = False
+            stream = self._stream
+            self._stream = None
 
-        self._stream.stop()
-        self._stream.close()
+        if stream is not None:
+            try:
+                stream.stop()
+                stream.close()
+            except Exception:
+                logger.exception("Error closing audio stream")
 
         if not self._frames:
             logger.warning("No audio frames recorded")
@@ -76,10 +91,10 @@ class AudioRecorder:
         with self._lock:
             if not self._is_recording:
                 return
-            total = sum(len(f) for f in self._frames)
-            if total >= self._max_frames:
+            if self._frame_count >= self._max_frames:
                 self._is_recording = False
                 max_s = self._config.max_duration_sec
                 logger.warning("Max recording duration reached (%ds)", max_s)
                 return
             self._frames.append(indata.copy())
+            self._frame_count += len(indata)
