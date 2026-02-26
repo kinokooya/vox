@@ -44,6 +44,7 @@ class VoxApp:
         vram = self._stt.get_vram_usage_mb()
         logger.info("STT model loaded (VRAM: ~%dMB)", vram)
 
+        self._recorder.open()
         self._hotkey.start()
         trigger = self._config.hotkey.trigger_key
         logger.info("=== Vox ready — press and hold %s to speak ===", trigger)
@@ -55,6 +56,7 @@ class VoxApp:
         if worker is not None and worker.is_alive():
             logger.info("Waiting for pipeline to finish...")
             worker.join(timeout=10)
+        self._recorder.close()
         logger.info("=== Vox stopped ===")
 
     def _on_key_press(self) -> None:
@@ -96,10 +98,14 @@ class VoxApp:
                 return
             logger.info("[Pipeline] STT result: %s", raw_text)
 
-            # 3. LLM formatting
+            # 3. LLM formatting (fallback to raw text on failure)
             logger.info("[Pipeline] Running LLM formatting...")
-            formatted_text = self._llm.format_text(raw_text)
-            logger.info("[Pipeline] LLM result: %s", formatted_text)
+            try:
+                formatted_text = self._llm.format_text(raw_text)
+                logger.info("[Pipeline] LLM result: %s", formatted_text)
+            except Exception:
+                logger.warning("[Pipeline] LLM failed, falling back to raw STT text")
+                formatted_text = raw_text
 
             # 4. Text insertion
             logger.info("[Pipeline] Inserting text...")

@@ -33,6 +33,7 @@ class LLMFormatter:
         self._client = OpenAI(
             base_url=config.base_url,
             api_key="not-needed",  # Local LLM doesn't require API key
+            timeout=config.timeout_sec,
         )
 
     def format_text(self, raw_text: str) -> str:

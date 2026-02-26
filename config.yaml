@@ -21,7 +21,7 @@ llm:
   max_tokens: 1024
 
 hotkey:
-  trigger_key: "alt_r"
+  trigger_key: "ctrl_r"
 
 audio:
   sample_rate: 16000

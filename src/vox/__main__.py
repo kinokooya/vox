@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import signal
 import sys
 from pathlib import Path
@@ -11,7 +12,20 @@ from vox.app import VoxApp
 from vox.config import load_config
 
 
+def _register_cuda_dll_dirs() -> None:
+    """Add NVIDIA CUDA DLL directories installed via pip to the DLL search path."""
+    site_packages = Path(sys.prefix) / "Lib" / "site-packages" / "nvidia"
+    if not site_packages.exists():
+        return
+    for bin_dir in site_packages.glob("*/bin"):
+        if bin_dir.is_dir():
+            os.add_dll_directory(str(bin_dir))
+            os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
+
+
 def main() -> None:
+    _register_cuda_dll_dirs()
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",

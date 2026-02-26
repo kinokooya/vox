@@ -16,9 +16,16 @@ logger = logging.getLogger(__name__)
 # Mapping of config key names to pynput Key objects
 _KEY_MAP: dict[str, keyboard.Key] = {
     "alt_r": keyboard.Key.alt_r,
+    "alt_gr": keyboard.Key.alt_gr,
     "alt_l": keyboard.Key.alt_l,
     "ctrl_r": keyboard.Key.ctrl_r,
     "ctrl_l": keyboard.Key.ctrl_l,
+}
+
+# On Windows, many keyboards report right Alt as alt_gr instead of alt_r.
+# Build a set of keys to accept for each config value.
+_KEY_ALIASES: dict[str, set[keyboard.Key]] = {
+    "alt_r": {keyboard.Key.alt_r, keyboard.Key.alt_gr},
 }
 
 
@@ -35,6 +42,7 @@ class HotkeyListener:
         if self._trigger_key is None:
             supported = list(_KEY_MAP)
             raise ValueError(f"Unknown trigger key: {config.trigger_key}. Supported: {supported}")
+        self._trigger_keys = _KEY_ALIASES.get(config.trigger_key, {self._trigger_key})
         self._on_press = on_press
         self._on_release = on_release
         self._listener: keyboard.Listener | None = None
@@ -64,7 +72,7 @@ class HotkeyListener:
             logger.info("Hotkey listener stopped")
 
     def _handle_press(self, key: Any) -> None:
-        if key != self._trigger_key:
+        if key not in self._trigger_keys:
             return
         with self._lock:
             if not self._enabled or self._is_pressed:
@@ -77,7 +85,7 @@ class HotkeyListener:
             logger.exception("Error in on_press callback")
 
     def _handle_release(self, key: Any) -> None:
-        if key != self._trigger_key:
+        if key not in self._trigger_keys:
             return
         with self._lock:
             if not self._is_pressed:

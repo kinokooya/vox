@@ -39,6 +39,7 @@ class LLMConfig(BaseModel):
     base_url: str = "http://localhost:11434/v1"
     temperature: float = Field(default=0.3, ge=0.0, le=2.0)
     max_tokens: int = Field(default=1024, gt=0)
+    timeout_sec: float = Field(default=30.0, gt=0)
 
 
 class HotkeyConfig(BaseModel):
