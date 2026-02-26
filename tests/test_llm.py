@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from vox.config import LLMConfig
 from vox.llm import SYSTEM_PROMPT, LLMFormatter
 
@@ -41,3 +43,27 @@ def test_system_prompt_contains_rules():
     assert "フィラー" in SYSTEM_PROMPT
     assert "句読点" in SYSTEM_PROMPT
     assert "技術用語" in SYSTEM_PROMPT
+
+
+def test_llm_config_timeout_sec_default():
+    config = LLMConfig()
+    assert config.timeout_sec == 30.0
+
+
+def test_llm_config_timeout_sec_custom():
+    config = LLMConfig(timeout_sec=60.0)
+    assert config.timeout_sec == 60.0
+
+
+@patch("vox.llm.OpenAI")
+def test_format_text_propagates_timeout_error(mock_openai_cls):
+    """When the OpenAI client raises an exception, format_text should propagate it."""
+    mock_client = MagicMock()
+    mock_openai_cls.return_value = mock_client
+    mock_client.chat.completions.create.side_effect = Exception("Request timed out")
+
+    config = LLMConfig()
+    formatter = LLMFormatter(config)
+
+    with pytest.raises(Exception, match="Request timed out"):
+        formatter.format_text("some text")
