@@ -13,7 +13,9 @@ build/
 venv/
 env/
 
-# IDE
+# IDE / tools
+.claude/
+.serena/
 .vscode/
 .idea/
 *.swp
@@ -43,6 +45,11 @@ models/
 
 # Logs
 *.log
+
+# Testing / linting caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Distribution
 *.whl
