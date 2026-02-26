@@ -1,7 +1,7 @@
 # Vox 開発引き継ぎドキュメント
 
 > このファイルは WSL2 上の開発セッションから Windows 上の次セッションへの引き継ぎ用です。
-> **最終更新**: 2025-02-19 (WSL2 上で Phase 1 MVP 完了)
+> **最終更新**: 2026-02-27 (Windows 実機テスト + ランタイム修正完了)
 
 ---
 
@@ -15,13 +15,12 @@
 | 2 | CLAUDE.md + GitHub Actions CI (.github/workflows/ci.yml) | `ef2f492` |
 | 3 | Phase 1 MVP 全モジュール実装 | `be6609a` |
 | 4 | Codex によるコードレビュー → 指摘修正 (HIGH×3, MEDIUM×4, LOW×3) | `1e2cfe1` |
+| 5 | Windows 実機テスト + ランタイム修正 (alt_gr対応, CUDA DLL自動登録, 常時ストリーム, LLMタイムアウト) | `2667e6c` |
 
 ### 未実施
 
-- **Windows 実機テスト** — WSL2 ではマイク/クリップボード/Win32 API が動かないため未検証
-- **Ollama との結合テスト** — Ollama サーバーが未起動のため未検証
-- **faster-whisper モデルロード** — GPU 実機が必要
 - **Phase 2 以降の実装**
+- **テスト追加 (alt_gr, LLMタイムアウトフォールバック)**
 
 ---
 
@@ -96,8 +95,8 @@ STTEngine (ABC)
 ### セットアップ
 
 ```powershell
-# 1. Python 3.11+ を確認（なければ https://python.org からインストール）
-python --version
+# 1. Python 3.12 インストール (winget 経由)
+winget install Python.Python.3.12
 
 # 2. プロジェクトを取得
 # WSL から: \\wsl$\Ubuntu\home\above0821\projects\vox を C:\Users\<user>\projects\vox にコピー
@@ -109,16 +108,20 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install -e ".[dev]"
 
-# 4. Ollama インストール + モデル取得
+# 4. CUDA ランタイムインストール (pip 経由)
+pip install nvidia-cublas-cu12 nvidia-cuda-runtime-cu12
+# ※ アプリ起動時に CUDA DLL パスを自動登録するため、手動の PATH 設定は不要
+
+# 5. Ollama インストール + モデル取得
 # https://ollama.com からインストーラをダウンロード・実行
 ollama pull qwen2.5:7b-instruct-q4_K_M
 # Ollama はインストール後自動的にバックグラウンドで起動する
 
-# 5. テスト実行（環境確認）
+# 6. テスト実行（環境確認）
 pytest tests/ -v
 ruff check src/
 
-# 6. アプリ起動
+# 7. アプリ起動
 python -m vox
 # → 「=== Vox ready — press and hold alt_r to speak ===」が出れば成功
 # → 右Altを押しながら話し、離すとパイプラインが実行される
@@ -141,9 +144,7 @@ python -m vox
 
 ### 即座に必要
 
-1. **Windows 実機で `python -m vox` を起動して動作確認**
-2. 動かない場合はエラーを見て修正
-3. 動いたら実際にマイクで話して E2E テスト
+1. Phase 2 タスクに着手
 
 ### Phase 2 タスク（要件定義書 Section 7 参照）
 
@@ -182,3 +183,8 @@ Codex による自動レビューで以下を修正済み：
 | パイプラインを別スレッド実行 | ホットキーリスナーをブロックしないため |
 | Win32 keybd_event で Ctrl+V | pyautogui より軽量。フォーカスを奪わない |
 | Pydantic + YAML | 型安全 + 人間が読み書きしやすい設定ファイル |
+| alt_r を alt_gr にもマッチ | Windows の多くのキーボードが右Alt を AltGr として送信するため |
+| デフォルトトリガーを ctrl_r に変更 | Alt 系はエディタのメニューと競合するため |
+| オーディオストリーム常時保持 | 毎回の作成・破棄による OS マイクインジケーターのラグを解消するため |
+| CUDA DLL パスを起動時に自動登録 | pip でインストールした nvidia パッケージの DLL を ctranslate2 が見つけられるようにするため |
+| LLM 30秒タイムアウト + 生テキストフォールバック | LLM が固まっても入力を失わないため |
