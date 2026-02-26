@@ -15,9 +15,8 @@ Windows向けデスクトップ常駐型の音声入力ツール。Push-to-Talk�
 
 ## 現在のステータス
 
-- **Phase 1 MVP: 実装完了** (WSL2上で開発、テスト13件全通過、Codexレビュー済み)
-- **Windows 実機テスト: 未実施** ← 次にやるべきこと
-- Phase 2 以降: 未着手
+- **Phase 1 MVP: 実装完了・Windows 実機テスト済み** (テスト24件全通過)
+- Phase 2: 未着手
 
 ## ファイル構造
 
@@ -37,6 +36,19 @@ src/vox/
 ```
 
 ## 開発ルール
+
+### タスク管理
+
+- **作業内容・タスク・進捗はすべて `docs/handoff.md` に記述する**
+- GitHub Issues は外部からの報告用のみ。自分のタスク管理には使わない
+
+### Git ワークフロー
+
+- **feature ブランチで開発し、main へ PR を出してマージする**
+- ブランチ名: `feature/<内容>`, `fix/<内容>`, `refactor/<内容>`
+- main への直接 push は原則禁止
+- PR 作成前に lint + テストを通すこと
+- CI (GitHub Actions) が通ることを確認してからマージする
 
 ### Git コミット
 
@@ -77,7 +89,7 @@ python -m vox
 
 ## アーキテクチャ要点
 
-- **パイプライン**: 右Alt押下→録音→右Alt解放→STT→LLM→クリップボード挿入
+- **パイプライン**: 右Ctrl押下→録音→右Ctrl解放→STT→LLM→クリップボード挿入
 - **STT抽象化**: `STTEngine` ABC。Phase 1 は faster-whisper、Phase 2 で SenseVoice 追加予定
 - **LLM**: OpenAI互換API (Ollama `http://localhost:11434/v1`)。`config.yaml` でモデル変更可
 - **スレッド**: パイプラインは別スレッドで実行。排他制御で二重実行防止。shutdown時join
