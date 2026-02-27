@@ -169,6 +169,18 @@ class LLMFormatter:
         ratio = SequenceMatcher(None, norm_in, norm_out).ratio()
         logger.debug("Validation SM ratio=%.4f (threshold=%.2f)", ratio, _SM_THRESHOLD)
         if ratio >= _SM_THRESHOLD:
+            # Guard: reject echo + answer pattern.
+            # If the output is much longer than the input despite high SM,
+            # the LLM likely echoed the input and appended extra content.
+            extra = len(norm_out) - len(norm_in)
+            if extra > max(int(len(norm_in) * 0.3), 5):
+                logger.debug(
+                    "Echo pattern detected: output %d chars longer than input "
+                    "(limit %d)",
+                    extra,
+                    max(int(len(norm_in) * 0.3), 5),
+                )
+                return False
             return True
 
         # Retry after stripping fillers from input

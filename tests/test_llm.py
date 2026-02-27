@@ -250,6 +250,21 @@ class TestIsValidFormatting:
     def test_empty_input(self):
         assert self.fmt._is_valid_formatting("", "anything")
 
+    # --- Should FAIL (LLM echoed input + added content) ---
+
+    def test_echo_plus_reformulation(self):
+        """Real-world case: LLM echoed input and appended a reformulation."""
+        assert not self.fmt._is_valid_formatting(
+            "いい感じに修正されてますね",
+            "いい感じに修正されてますね修正が適切に行われているようです。",
+        )
+
+    def test_echo_plus_reformulation_with_period(self):
+        assert not self.fmt._is_valid_formatting(
+            "いい感じに修正されてますね",
+            "いい感じに修正されてますね。修正が適切に行われています。",
+        )
+
     # --- Should FAIL (LLM answered instead of formatting) ---
 
     def test_answer_to_question(self):
