@@ -288,9 +288,10 @@ class TestIsValidFormatting:
         """Real-world case: LLM answered a question about improving accuracy."""
         assert not self.fmt._is_valid_formatting(
             "もっと精度を向上させるにはどうすればよいですか？",
-            "もっと正常性を向上させるためには、状況分析を行い、"
-            "問題点を特定し、改善策を立て、実行し、結果を評価し、"
-            "繰り返し改善を行うことが重要です。",
+            "もっと精度を向上させるためには、データの量と質を改善し、"
+            "モデルを適切に訓練することが重要です。また、フィードバックループを"
+            "設けて実際の結果と比較することで、システムの性能を評価し、"
+            "必要に応じて調整することも有効です。",
         )
 
     def test_long_answer(self):
@@ -331,9 +332,10 @@ def test_format_text_falls_back_on_accuracy_question(mock_openai_cls):
 
     raw_input = "もっと精度を向上させるにはどうすればよいですか？"
     bad_answer = (
-        "もっと正常性を向上させるためには、状況分析を行い、"
-        "問題点を特定し、改善策を立て、実行し、結果を評価し、"
-        "繰り返し改善を行うことが重要です。"
+        "もっと精度を向上させるためには、データの量と質を改善し、"
+        "モデルを適切に訓練することが重要です。また、フィードバックループを"
+        "設けて実際の結果と比較することで、システムの性能を評価し、"
+        "必要に応じて調整することも有効です。"
     )
 
     mock_response = MagicMock()
