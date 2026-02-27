@@ -5,6 +5,12 @@ stt:
     device: "cuda"
     compute_type: "float16"
     language: "ja"
+    beam_size: 1
+    condition_on_previous_text: false
+    no_speech_threshold: 0.6
+    log_prob_threshold: -0.5
+    compression_ratio_threshold: 2.0
+    hallucination_silence_threshold: 2.0
     vad:
       min_speech_duration_ms: 250
       min_silence_duration_ms: 500
@@ -18,7 +24,10 @@ llm:
   model: "qwen2.5:7b-instruct-q4_K_M"
   base_url: "http://localhost:11434/v1"
   temperature: 0.3
-  max_tokens: 1024
+  max_tokens: 512
+  output_format: "single_line"
+  skip_short: true
+  skip_short_max_chars: 20
 
 hotkey:
   trigger_key: "ctrl_r"
@@ -27,6 +36,7 @@ audio:
   sample_rate: 16000
   channels: 1
   max_duration_sec: 60
+  min_duration_sec: 0.5
 
 insertion:
   pre_paste_delay_ms: 50

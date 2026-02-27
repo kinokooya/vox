@@ -78,6 +78,16 @@ class VoxApp:
             self._worker = thread
         thread.start()
 
+    _FILLERS = ["えーと", "あのー", "あの", "まあ", "えー", "うーん", "えっと"]
+
+    def _should_skip_llm(self, text: str) -> bool:
+        """Skip LLM for short, clean text without fillers."""
+        if not self._config.llm.skip_short:
+            return False
+        if len(text) > self._config.llm.skip_short_max_chars:
+            return False
+        return not any(f in text for f in self._FILLERS)
+
     def _process_pipeline(self) -> None:
         """Execute the full pipeline: record stop → STT → LLM → insert."""
         try:
@@ -90,6 +100,13 @@ class VoxApp:
             duration = len(audio) / self._config.audio.sample_rate
             logger.info("[Pipeline] Audio: %.1fs, %d samples", duration, len(audio))
 
+            # 1b. Minimum duration check
+            if duration < self._config.audio.min_duration_sec:
+                logger.info(
+                    "[Pipeline] Audio too short (%.1fs), skipping", duration
+                )
+                return
+
             # 2. STT
             logger.info("[Pipeline] Running STT...")
             raw_text = self._stt.transcribe(audio, self._config.audio.sample_rate)
@@ -98,14 +115,20 @@ class VoxApp:
                 return
             logger.info("[Pipeline] STT result: %s", raw_text)
 
-            # 3. LLM formatting (fallback to raw text on failure)
-            logger.info("[Pipeline] Running LLM formatting...")
-            try:
-                formatted_text = self._llm.format_text(raw_text)
-                logger.info("[Pipeline] LLM result: %s", formatted_text)
-            except Exception:
-                logger.warning("[Pipeline] LLM failed, falling back to raw STT text")
+            # 3. LLM formatting (skip for short text, fallback to raw on failure)
+            if self._should_skip_llm(raw_text):
+                logger.info("[Pipeline] Short text, skipping LLM: %s", raw_text)
                 formatted_text = raw_text
+            else:
+                logger.info("[Pipeline] Running LLM formatting...")
+                try:
+                    formatted_text = self._llm.format_text(raw_text)
+                    logger.info("[Pipeline] LLM result: %s", formatted_text)
+                except Exception:
+                    logger.warning(
+                        "[Pipeline] LLM failed, falling back to raw STT text"
+                    )
+                    formatted_text = raw_text
 
             # 4. Text insertion
             logger.info("[Pipeline] Inserting text...")

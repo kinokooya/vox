@@ -24,9 +24,9 @@ def test_pipeline_llm_timeout_falls_back_to_raw_text(
 
     config = AppConfig()
 
-    # Set up mock STT engine
+    # Set up mock STT engine (text must be >20 chars to avoid LLM skip)
     mock_stt = MagicMock()
-    mock_stt.transcribe.return_value = "raw transcription"
+    mock_stt.transcribe.return_value = "えーとこれはテスト用の長い音声認識テキストです"
     mock_stt_factory.return_value = mock_stt
 
     # Set up mock recorder that returns valid audio
@@ -49,10 +49,10 @@ def test_pipeline_llm_timeout_falls_back_to_raw_text(
     app._process_pipeline()
 
     # LLM was called with the raw text
-    mock_llm.format_text.assert_called_once_with("raw transcription")
+    mock_llm.format_text.assert_called_once_with("えーとこれはテスト用の長い音声認識テキストです")
 
     # Inserter was called with the raw text as fallback
-    mock_inserter.insert.assert_called_once_with("raw transcription")
+    mock_inserter.insert.assert_called_once_with("えーとこれはテスト用の長い音声認識テキストです")
 
 
 @patch("vox.app.TextInserter")

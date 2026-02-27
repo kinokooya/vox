@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from openai import OpenAI
 
@@ -11,18 +12,17 @@ from vox.config import LLMConfig
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
-あなたは音声認識テキストを整形するアシスタントです。
-入力されたテキストを以下のルールに従って整形し、整形後のテキストのみを出力してください。
+音声認識テキストを整形するアシスタントです。整形後のテキストのみを出力してください。
 
 ルール:
-1. フィラー（「えーと」「あのー」「まあ」「えー」「うーん」等）を完全に除去する
-2. 言い間違い・繰り返し・言い直しを修正する
-3. しどろもどろな発話から意図を汲み取り、明確な文章に再構成する
-4. 適切な句読点（。、）を追加する
-5. 文法的な誤りを修正する
-6. 技術用語・英語用語は正しい表記にする（例: リアクト → React）
-7. 元の意味・意図は変えない。情報を追加しない
-8. 整形済みテキストのみを出力する（説明や注釈は一切不要）"""
+1. フィラー（「えーと」「あのー」「まあ」「えー」「うーん」「あー」「えっと」等）を除去
+2. 言い間違い・繰り返し・言い直しを修正し、最終的な意図のみ残す
+3. 適切な句読点（。、）を追加
+4. 文法的な誤りを修正
+5. 技術用語は正しい表記にする（例: リアクト→React、ドッカー→Docker）
+6. 元の意味を変えない。情報を追加しない
+7. 入力が短い場合（単語や短いフレーズ）はそのまま返す
+8. 出力は整形済みテキストのみ"""
 
 
 class LLMFormatter:
@@ -62,5 +62,14 @@ class LLMFormatter:
 
         result = response.choices[0].message.content or ""
         result = result.strip()
+        result = self._normalize_output(result)
         logger.info("LLM formatting: output=%d chars", len(result))
         return result
+
+    def _normalize_output(self, text: str) -> str:
+        """Normalize output based on output_format config."""
+        if self._config.output_format == "single_line":
+            text = text.replace("\n", " ")
+            text = re.sub(r" {2,}", " ", text)
+            text = text.strip()
+        return text
