@@ -8,6 +8,9 @@ stt:
     クロード構図: "Claude Code"
     クロード講座: "Claude Code"
     クロード口座: "Claude Code"
+    グロードコード: "Claude Code"
+    グロード コード: "Claude Code"
+    グローバルコーディング: "Claude Code"
   faster_whisper:
     model: "large-v3-turbo"
     device: "cuda"

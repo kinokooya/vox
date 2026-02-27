@@ -1,4 +1,9 @@
-"""Text insertion via EM_REPLACESEL or clipboard + WM_PASTE (Windows)."""
+"""Text insertion via SendInput with KEYEVENTF_UNICODE (Windows).
+
+Sends Unicode characters directly as keyboard events, bypassing the
+clipboard and IME.  Works with all applications including Chrome,
+modern Notepad, and standard Win32 controls.
+"""
 
 from __future__ import annotations
 
@@ -11,63 +16,87 @@ from vox.config import InsertionConfig
 logger = logging.getLogger(__name__)
 
 # Win32 constants
-EM_REPLACESEL = 0x00C2
-WM_PASTE = 0x0302
-WM_NULL = 0x0000
+INPUT_KEYBOARD = 1
+KEYEVENTF_UNICODE = 0x0004
+KEYEVENTF_KEYUP = 0x0002
 
 
-def _get_focused_hwnd() -> int:
-    """Return the HWND of the focused control in the foreground window."""
-    user32 = ctypes.windll.user32  # type: ignore[attr-defined]
-    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+class _KEYBDINPUT(ctypes.Structure):
+    _fields_ = [
+        ("wVk", ctypes.wintypes.WORD),
+        ("wScan", ctypes.wintypes.WORD),
+        ("dwFlags", ctypes.wintypes.DWORD),
+        ("time", ctypes.wintypes.DWORD),
+        ("dwExtraInfo", ctypes.c_void_p),
+    ]
 
-    hwnd = user32.GetForegroundWindow()
-    if not hwnd:
-        return 0
 
-    target_tid = user32.GetWindowThreadProcessId(hwnd, None)
-    our_tid = kernel32.GetCurrentThreadId()
+class _INPUT(ctypes.Structure):
+    """Win32 INPUT structure for SendInput."""
 
-    attached = False
-    if target_tid != our_tid:
-        attached = bool(user32.AttachThreadInput(our_tid, target_tid, True))
+    class _U(ctypes.Union):
+        _fields_ = [
+            ("ki", _KEYBDINPUT),
+            # Pad to at least sizeof(MOUSEINPUT) so SendInput array stride
+            # matches the real INPUT size on 64-bit Windows (40 bytes).
+            ("_pad", ctypes.c_byte * 32),
+        ]
 
-    try:
-        hwnd_focus = user32.GetFocus()
-    finally:
-        if attached:
-            user32.AttachThreadInput(our_tid, target_tid, False)
-
-    return hwnd_focus or hwnd
+    _anonymous_ = ("_u",)
+    _fields_ = [
+        ("type", ctypes.wintypes.DWORD),
+        ("_u", _U),
+    ]
 
 
 class TextInserter:
-    """Inserts text into the active text field."""
+    """Inserts text into the active text field using KEYEVENTF_UNICODE."""
 
     def __init__(self, config: InsertionConfig) -> None:
         self._config = config
 
     def insert(self, text: str) -> None:
-        """Insert text into the active window.
+        """Insert text by sending Unicode keyboard events via SendInput.
 
-        Primary method: EM_REPLACESEL sends text directly to the control,
-        bypassing the clipboard entirely.
-        Fallback: clipboard + WM_PASTE for controls that don't support
-        EM_REPLACESEL.
+        Each character is sent as a key-down + key-up pair with the
+        KEYEVENTF_UNICODE flag.  All events are batched into a single
+        SendInput call for atomicity and speed.
         """
         if not text:
             logger.warning("Empty text, skipping insertion")
             return
 
-        target = _get_focused_hwnd()
-        if not target:
-            logger.warning("No focused window found for insertion")
-            return
+        events: list[_INPUT] = []
+        for char in text:
+            code = ord(char)
+            # Key down
+            inp_down = _INPUT(type=INPUT_KEYBOARD)
+            inp_down.ki.wVk = 0
+            inp_down.ki.wScan = code
+            inp_down.ki.dwFlags = KEYEVENTF_UNICODE
+            inp_down.ki.time = 0
+            inp_down.ki.dwExtraInfo = None
+            events.append(inp_down)
+            # Key up
+            inp_up = _INPUT(type=INPUT_KEYBOARD)
+            inp_up.ki.wVk = 0
+            inp_up.ki.wScan = code
+            inp_up.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
+            inp_up.ki.time = 0
+            inp_up.ki.dwExtraInfo = None
+            events.append(inp_up)
 
-        # Try direct text insertion — no clipboard, no timing issues
+        arr = (_INPUT * len(events))(*events)
         user32 = ctypes.windll.user32  # type: ignore[attr-defined]
-        user32.SendMessageW(target, EM_REPLACESEL, True, ctypes.c_wchar_p(text))
-        logger.info("Text inserted via EM_REPLACESEL: %d chars (hwnd=0x%X)", len(text), target)
+        sent = user32.SendInput(len(events), arr, ctypes.sizeof(_INPUT))
+
+        logger.info(
+            "Text inserted via SendInput KEYEVENTF_UNICODE: "
+            "%d chars (%d/%d events)",
+            len(text),
+            sent,
+            len(events),
+        )
 
     def restore_clipboard_if_pending(self) -> None:
-        """No-op: EM_REPLACESEL does not use the clipboard."""
+        """No-op: KEYEVENTF_UNICODE does not use the clipboard."""
