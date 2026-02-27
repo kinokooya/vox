@@ -1,4 +1,4 @@
-"""Text insertion via clipboard + Ctrl+V (Windows)."""
+"""Text insertion via clipboard + WM_PASTE (Windows)."""
 
 from __future__ import annotations
 
@@ -12,19 +12,37 @@ from vox.config import InsertionConfig
 
 logger = logging.getLogger(__name__)
 
-# Win32 virtual key codes
-VK_CONTROL = 0x11
-VK_V = 0x56
-KEYEVENTF_KEYUP = 0x0002
+# Win32 constants
+WM_PASTE = 0x0302
 
 
-def _send_ctrl_v() -> None:
-    """Simulate Ctrl+V keypress using Win32 keybd_event."""
+def _send_paste() -> None:
+    """Send WM_PASTE to the focused control (bypasses keyboard hooks)."""
     user32 = ctypes.windll.user32  # type: ignore[attr-defined]
-    user32.keybd_event(VK_CONTROL, 0, 0, 0)
-    user32.keybd_event(VK_V, 0, 0, 0)
-    user32.keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0)
-    user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd:
+        logger.warning("No foreground window found for paste")
+        return
+
+    # Attach to the foreground thread to discover which control has focus
+    target_tid = user32.GetWindowThreadProcessId(hwnd, None)
+    our_tid = kernel32.GetCurrentThreadId()
+
+    attached = False
+    if target_tid != our_tid:
+        attached = bool(user32.AttachThreadInput(our_tid, target_tid, True))
+
+    try:
+        hwnd_focus = user32.GetFocus()
+    finally:
+        if attached:
+            user32.AttachThreadInput(our_tid, target_tid, False)
+
+    target = hwnd_focus or hwnd
+    user32.SendMessageW(target, WM_PASTE, 0, 0)
+    logger.debug("WM_PASTE sent to hwnd=0x%X", target)
 
 
 class TextInserter:
@@ -36,7 +54,7 @@ class TextInserter:
     def insert(self, text: str) -> None:
         """Insert text into the active window.
 
-        Saves the current clipboard, sets the text, sends Ctrl+V,
+        Saves the current clipboard, sets the text, sends WM_PASTE,
         then restores the original clipboard content.
         """
         if not text:
@@ -56,7 +74,7 @@ class TextInserter:
         time.sleep(self._config.pre_paste_delay_ms / 1000.0)
 
         try:
-            _send_ctrl_v()
+            _send_paste()
             logger.info("Text inserted: %d chars", len(text))
         finally:
             if self._config.restore_clipboard and captured:

@@ -73,12 +73,15 @@ class AudioRecorder:
         """Stop capturing and return audio as numpy array."""
         with self._lock:
             self._is_recording = False
+            frames = self._frames
+            self._frames = []
+            self._frame_count = 0
 
-        if not self._frames:
+        if not frames:
             logger.warning("No audio frames recorded")
             return np.array([], dtype=np.float32)
 
-        audio = np.concatenate(self._frames, axis=0).flatten()
+        audio = np.concatenate(frames, axis=0).flatten()
         duration = len(audio) / self._config.sample_rate
         logger.info("Recording stopped: %.1fs, %d samples", duration, len(audio))
         return audio

@@ -1,5 +1,6 @@
 """Tests for VoxApp pipeline orchestration."""
 
+import time
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -348,3 +349,91 @@ def test_pipeline_applies_word_replacements(
     # LLM should receive the replaced text
     mock_llm.format_text.assert_called_once_with("Claude Codeを使って開発しています")
     mock_inserter.insert.assert_called_once_with("Claude Codeを使って開発しています。")
+
+
+# --- Duplicate insertion prevention tests ---
+
+
+@patch("vox.app.TextInserter")
+@patch("vox.app.LLMFormatter")
+@patch("vox.app.create_stt_engine")
+@patch("vox.app.AudioRecorder")
+@patch("vox.app.HotkeyListener")
+def test_release_without_press_is_ignored(
+    mock_hotkey_cls,
+    mock_recorder_cls,
+    mock_stt_factory,
+    mock_llm_cls,
+    mock_inserter_cls,
+):
+    """_on_key_release without prior _on_key_press should be a no-op."""
+    from vox.app import VoxApp
+
+    config = AppConfig()
+
+    mock_recorder = MagicMock()
+    mock_recorder_cls.return_value = mock_recorder
+
+    mock_stt_factory.return_value = MagicMock()
+    mock_llm_cls.return_value = MagicMock()
+    mock_inserter_cls.return_value = MagicMock()
+
+    mock_hotkey = MagicMock()
+    mock_hotkey_cls.return_value = mock_hotkey
+
+    app = VoxApp(config)
+
+    # Call release without press — should be ignored
+    app._on_key_release()
+
+    # No pipeline thread should have been started
+    assert app._worker is None
+    mock_recorder.stop.assert_not_called()
+    mock_hotkey.set_enabled.assert_not_called()
+
+
+@patch("vox.app.TextInserter")
+@patch("vox.app.LLMFormatter")
+@patch("vox.app.create_stt_engine")
+@patch("vox.app.AudioRecorder")
+@patch("vox.app.HotkeyListener")
+def test_key_press_during_cooldown_is_ignored(
+    mock_hotkey_cls,
+    mock_recorder_cls,
+    mock_stt_factory,
+    mock_llm_cls,
+    mock_inserter_cls,
+):
+    """Key press within cooldown window after pipeline end should be ignored."""
+    from vox.app import VoxApp
+
+    config = AppConfig()
+
+    mock_recorder = MagicMock()
+    mock_recorder.stop.return_value = np.ones(16000, dtype=np.float32)
+    mock_recorder_cls.return_value = mock_recorder
+
+    mock_stt = MagicMock()
+    mock_stt.transcribe.return_value = "テスト"
+    mock_stt_factory.return_value = mock_stt
+
+    mock_llm = MagicMock()
+    mock_llm_cls.return_value = mock_llm
+
+    mock_inserter = MagicMock()
+    mock_inserter_cls.return_value = mock_inserter
+
+    mock_hotkey = MagicMock()
+    mock_hotkey_cls.return_value = mock_hotkey
+
+    app = VoxApp(config)
+
+    # Simulate pipeline just finished
+    app._last_pipeline_end = time.monotonic()
+
+    # Key press during cooldown should be ignored
+    app._on_key_press()
+
+    # recorder.start() should NOT have been called
+    mock_recorder.start.assert_not_called()
+    assert app._recording_active is False

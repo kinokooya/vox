@@ -32,6 +32,8 @@ class VoxApp:
             on_release=self._on_key_release,
         )
         self._processing = False
+        self._recording_active = False
+        self._last_pipeline_end = 0.0
         self._lock = threading.Lock()
         self._worker: threading.Thread | None = None
 
@@ -88,15 +90,25 @@ class VoxApp:
         self._recorder.close()
         logger.info("=== Vox stopped ===")
 
+    _PIPELINE_COOLDOWN_SEC = 0.3
+
     def _on_key_press(self) -> None:
         with self._lock:
             if self._processing:
                 logger.info("Processing in progress, ignoring key press")
                 return
+            if time.monotonic() - self._last_pipeline_end < self._PIPELINE_COOLDOWN_SEC:
+                logger.info("Pipeline cooldown active, ignoring key press")
+                return
+            self._recording_active = True
         self._recorder.start()
 
     def _on_key_release(self) -> None:
         with self._lock:
+            if not self._recording_active:
+                logger.debug("Release without press, ignoring")
+                return
+            self._recording_active = False
             if self._processing:
                 return
             self._processing = True
@@ -177,4 +189,5 @@ class VoxApp:
             with self._lock:
                 self._processing = False
                 self._worker = None
+                self._last_pipeline_end = time.monotonic()
             self._hotkey.set_enabled(True)
