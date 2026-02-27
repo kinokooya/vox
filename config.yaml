@@ -5,6 +5,9 @@ stt:
     クロートコード: "Claude Code"
     クロード コード: "Claude Code"
     クロート コード: "Claude Code"
+    クロード構図: "Claude Code"
+    クロード講座: "Claude Code"
+    クロード口座: "Claude Code"
   faster_whisper:
     model: "large-v3-turbo"
     device: "cuda"

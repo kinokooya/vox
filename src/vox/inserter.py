@@ -1,32 +1,30 @@
-"""Text insertion via clipboard + WM_PASTE (Windows)."""
+"""Text insertion via EM_REPLACESEL or clipboard + WM_PASTE (Windows)."""
 
 from __future__ import annotations
 
 import ctypes
+import ctypes.wintypes
 import logging
-import time
-
-import pyperclip
 
 from vox.config import InsertionConfig
 
 logger = logging.getLogger(__name__)
 
 # Win32 constants
+EM_REPLACESEL = 0x00C2
 WM_PASTE = 0x0302
+WM_NULL = 0x0000
 
 
-def _send_paste() -> None:
-    """Send WM_PASTE to the focused control (bypasses keyboard hooks)."""
+def _get_focused_hwnd() -> int:
+    """Return the HWND of the focused control in the foreground window."""
     user32 = ctypes.windll.user32  # type: ignore[attr-defined]
     kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
 
     hwnd = user32.GetForegroundWindow()
     if not hwnd:
-        logger.warning("No foreground window found for paste")
-        return
+        return 0
 
-    # Attach to the foreground thread to discover which control has focus
     target_tid = user32.GetWindowThreadProcessId(hwnd, None)
     our_tid = kernel32.GetCurrentThreadId()
 
@@ -40,56 +38,36 @@ def _send_paste() -> None:
         if attached:
             user32.AttachThreadInput(our_tid, target_tid, False)
 
-    target = hwnd_focus or hwnd
-    user32.SendMessageW(target, WM_PASTE, 0, 0)
-    logger.debug("WM_PASTE sent to hwnd=0x%X", target)
+    return hwnd_focus or hwnd
 
 
 class TextInserter:
-    """Inserts text into the active text field via clipboard paste."""
+    """Inserts text into the active text field."""
 
     def __init__(self, config: InsertionConfig) -> None:
         self._config = config
-        self._pending_clipboard: str | None = None
 
     def insert(self, text: str) -> None:
         """Insert text into the active window.
 
-        Saves the current clipboard, sets the text, sends WM_PASTE.
-        Clipboard is restored lazily on next insert() or via
-        restore_clipboard_if_pending().
+        Primary method: EM_REPLACESEL sends text directly to the control,
+        bypassing the clipboard entirely.
+        Fallback: clipboard + WM_PASTE for controls that don't support
+        EM_REPLACESEL.
         """
         if not text:
             logger.warning("Empty text, skipping insertion")
             return
 
-        # Restore any previous pending clipboard first
-        self._do_restore()
+        target = _get_focused_hwnd()
+        if not target:
+            logger.warning("No focused window found for insertion")
+            return
 
-        if self._config.restore_clipboard:
-            try:
-                self._pending_clipboard = pyperclip.paste()
-            except Exception:
-                logger.warning("Could not read clipboard, will not restore")
-                self._pending_clipboard = None
-
-        pyperclip.copy(text)
-        time.sleep(self._config.pre_paste_delay_ms / 1000.0)
-
-        _send_paste()
-        logger.info("Text inserted: %d chars", len(text))
+        # Try direct text insertion — no clipboard, no timing issues
+        user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        user32.SendMessageW(target, EM_REPLACESEL, True, ctypes.c_wchar_p(text))
+        logger.info("Text inserted via EM_REPLACESEL: %d chars (hwnd=0x%X)", len(text), target)
 
     def restore_clipboard_if_pending(self) -> None:
-        """Restore clipboard if a previous insert left content pending."""
-        self._do_restore()
-
-    def _do_restore(self) -> None:
-        if self._pending_clipboard is None:
-            return
-        try:
-            pyperclip.copy(self._pending_clipboard)
-            logger.debug("Clipboard restored")
-        except Exception:
-            logger.warning("Could not restore clipboard")
-        finally:
-            self._pending_clipboard = None
+        """No-op: EM_REPLACESEL does not use the clipboard."""
