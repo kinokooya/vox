@@ -86,6 +86,9 @@ class FasterWhisperEngine(STTEngine):
             hallucination_silence_threshold=self._config.hallucination_silence_threshold,
             word_timestamps=self._config.hallucination_silence_threshold is not None,
             initial_prompt=self._config.initial_prompt,
+            hotwords=self._config.hotwords,
+            repetition_penalty=self._config.repetition_penalty,
+            patience=self._config.patience,
             vad_filter=True,
             vad_parameters={
                 "min_speech_duration_ms": self._config.vad.min_speech_duration_ms,

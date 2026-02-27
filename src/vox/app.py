@@ -117,6 +117,12 @@ class VoxApp:
             return False
         return not any(f in text for f in self._FILLERS)
 
+    def _apply_word_replacements(self, text: str) -> str:
+        """Apply word replacements from config (e.g. katakana → Latin)."""
+        for old, new in self._config.stt.word_replacements.items():
+            text = text.replace(old, new)
+        return text
+
     def _process_pipeline(self) -> None:
         """Execute the full pipeline: record stop → STT → LLM → insert."""
         try:
@@ -142,6 +148,7 @@ class VoxApp:
             if not raw_text.strip():
                 logger.info("[Pipeline] STT returned empty text, skipping")
                 return
+            raw_text = self._apply_word_replacements(raw_text)
             logger.info("[Pipeline] STT result: %s", raw_text)
 
             # 3. LLM formatting (skip for short text, fallback to raw on failure)

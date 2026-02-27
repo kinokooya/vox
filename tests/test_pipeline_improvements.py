@@ -298,7 +298,7 @@ def test_config_backward_compat_no_new_fields():
     assert config.llm.skip_short is True
     assert config.llm.skip_short_max_chars == 20
     assert config.llm.max_tokens == 512
-    assert config.stt.faster_whisper.beam_size == 1
+    assert config.stt.faster_whisper.beam_size == 5
     assert config.stt.faster_whisper.condition_on_previous_text is False
     assert config.stt.faster_whisper.no_speech_threshold == 0.6
     assert config.stt.faster_whisper.log_prob_threshold == -0.5

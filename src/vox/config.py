@@ -18,13 +18,16 @@ class FasterWhisperConfig(BaseModel):
     device: str = "cuda"
     compute_type: str = "float16"
     language: str = "ja"
-    beam_size: int = Field(default=1, ge=1, le=10)
+    beam_size: int = Field(default=5, ge=1, le=10)
     condition_on_previous_text: bool = False
     no_speech_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     log_prob_threshold: float = Field(default=-0.5, ge=-5.0, le=0.0)
     compression_ratio_threshold: float = Field(default=2.0, gt=0.0)
     hallucination_silence_threshold: float | None = Field(default=2.0, ge=0.0)
     initial_prompt: str | None = None
+    hotwords: str | None = None
+    repetition_penalty: float = Field(default=1.0, ge=0.0)
+    patience: float = Field(default=1.0, ge=0.0)
     vad: VADConfig = VADConfig()
 
 
@@ -36,6 +39,7 @@ class SenseVoiceConfig(BaseModel):
 
 class STTConfig(BaseModel):
     engine: str = "faster-whisper"
+    word_replacements: dict[str, str] = Field(default_factory=dict)
     faster_whisper: FasterWhisperConfig = FasterWhisperConfig()
     sensevoice: SenseVoiceConfig = SenseVoiceConfig()
 

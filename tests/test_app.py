@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from vox.config import AppConfig
+from vox.config import AppConfig, STTConfig
 
 
 @patch("vox.app.TextInserter")
@@ -250,3 +250,101 @@ def test_start_llm_warmup_failure_does_not_crash(
     mock_stt.load_model.assert_called_once()
     mock_recorder.open.assert_called_once()
     mock_hotkey.start.assert_called_once()
+
+
+# --- Word replacement tests ---
+
+
+@patch("vox.app.TextInserter")
+@patch("vox.app.LLMFormatter")
+@patch("vox.app.create_stt_engine")
+@patch("vox.app.AudioRecorder")
+@patch("vox.app.HotkeyListener")
+def test_apply_word_replacements_unit(
+    mock_hotkey_cls,
+    mock_recorder_cls,
+    mock_stt_factory,
+    mock_llm_cls,
+    mock_inserter_cls,
+):
+    """_apply_word_replacements should replace all configured words."""
+    from vox.app import VoxApp
+
+    config = AppConfig(
+        stt=STTConfig(word_replacements={"クロードコード": "Claude Code", "ギットハブ": "GitHub"})
+    )
+    mock_stt_factory.return_value = MagicMock()
+    mock_llm_cls.return_value = MagicMock()
+    mock_inserter_cls.return_value = MagicMock()
+
+    app = VoxApp(config)
+    result = app._apply_word_replacements("クロードコードを使ってギットハブにプッシュ")
+    assert result == "Claude Codeを使ってGitHubにプッシュ"
+
+
+@patch("vox.app.TextInserter")
+@patch("vox.app.LLMFormatter")
+@patch("vox.app.create_stt_engine")
+@patch("vox.app.AudioRecorder")
+@patch("vox.app.HotkeyListener")
+def test_apply_word_replacements_no_match(
+    mock_hotkey_cls,
+    mock_recorder_cls,
+    mock_stt_factory,
+    mock_llm_cls,
+    mock_inserter_cls,
+):
+    """When no replacements match, text is returned unchanged."""
+    from vox.app import VoxApp
+
+    config = AppConfig(
+        stt=STTConfig(word_replacements={"クロードコード": "Claude Code"})
+    )
+    mock_stt_factory.return_value = MagicMock()
+    mock_llm_cls.return_value = MagicMock()
+    mock_inserter_cls.return_value = MagicMock()
+
+    app = VoxApp(config)
+    assert app._apply_word_replacements("テスト文章です") == "テスト文章です"
+
+
+@patch("vox.app.TextInserter")
+@patch("vox.app.LLMFormatter")
+@patch("vox.app.create_stt_engine")
+@patch("vox.app.AudioRecorder")
+@patch("vox.app.HotkeyListener")
+def test_pipeline_applies_word_replacements(
+    mock_hotkey_cls,
+    mock_recorder_cls,
+    mock_stt_factory,
+    mock_llm_cls,
+    mock_inserter_cls,
+):
+    """Pipeline should apply word replacements to STT output before LLM."""
+    from vox.app import VoxApp
+
+    config = AppConfig(
+        stt=STTConfig(word_replacements={"クロードコード": "Claude Code"}),
+    )
+
+    mock_stt = MagicMock()
+    mock_stt.transcribe.return_value = "クロードコードを使って開発しています"
+    mock_stt_factory.return_value = mock_stt
+
+    mock_recorder = MagicMock()
+    mock_recorder.stop.return_value = np.ones(16000, dtype=np.float32)
+    mock_recorder_cls.return_value = mock_recorder
+
+    mock_llm = MagicMock()
+    mock_llm.format_text.return_value = "Claude Codeを使って開発しています。"
+    mock_llm_cls.return_value = mock_llm
+
+    mock_inserter = MagicMock()
+    mock_inserter_cls.return_value = mock_inserter
+
+    app = VoxApp(config)
+    app._process_pipeline()
+
+    # LLM should receive the replaced text
+    mock_llm.format_text.assert_called_once_with("Claude Codeを使って開発しています")
+    mock_inserter.insert.assert_called_once_with("Claude Codeを使って開発しています。")

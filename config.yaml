@@ -1,16 +1,22 @@
 stt:
   engine: "faster-whisper"  # or "sensevoice"
+  word_replacements:
+    クロードコード: "Claude Code"
   faster_whisper:
     model: "large-v3-turbo"
     device: "cuda"
     compute_type: "float16"
     language: "ja"
-    beam_size: 1
+    beam_size: 5
     condition_on_previous_text: false
     no_speech_threshold: 0.6
     log_prob_threshold: -0.5
     compression_ratio_threshold: 2.0
     hallucination_silence_threshold: 2.0
+    initial_prompt: "Claude Code、GitHub、TypeScript、Python、Docker、Kubernetes、npm、Vox。プログラミングに関する音声入力。"
+    hotwords: "Claude Code, GitHub, TypeScript, Python, Docker, Kubernetes, npm, Vox"
+    repetition_penalty: 1.1
+    patience: 2.0
     vad:
       min_speech_duration_ms: 250
       min_silence_duration_ms: 500
