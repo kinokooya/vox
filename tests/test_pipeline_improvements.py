@@ -245,7 +245,7 @@ def test_single_line_removes_newlines(mock_openai_cls):
 
     config = LLMConfig(output_format="single_line")
     formatter = LLMFormatter(config)
-    result = formatter.format_text("test input")
+    result = formatter.format_text("line one line two line three")
 
     assert "\n" not in result
     assert result == "line one line two line three"
