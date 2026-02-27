@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pytest
 
 from vox.config import AppConfig
 
@@ -130,3 +131,122 @@ def test_pipeline_empty_audio_skips_processing(
     mock_stt.transcribe.assert_not_called()
     mock_llm.format_text.assert_not_called()
     mock_inserter.insert.assert_not_called()
+
+
+# --- start() parallel loading tests ---
+
+
+@patch("vox.app.TextInserter")
+@patch("vox.app.LLMFormatter")
+@patch("vox.app.create_stt_engine")
+@patch("vox.app.AudioRecorder")
+@patch("vox.app.HotkeyListener")
+def test_start_loads_stt_and_warms_llm(
+    mock_hotkey_cls,
+    mock_recorder_cls,
+    mock_stt_factory,
+    mock_llm_cls,
+    mock_inserter_cls,
+):
+    """start() should call load_model() and warmup() in parallel."""
+    from vox.app import VoxApp
+
+    config = AppConfig()
+
+    mock_stt = MagicMock()
+    mock_stt_factory.return_value = mock_stt
+
+    mock_llm = MagicMock()
+    mock_llm_cls.return_value = mock_llm
+
+    mock_recorder = MagicMock()
+    mock_recorder_cls.return_value = mock_recorder
+
+    mock_hotkey = MagicMock()
+    mock_hotkey_cls.return_value = mock_hotkey
+
+    app = VoxApp(config)
+    app.start()
+
+    mock_stt.load_model.assert_called_once()
+    mock_stt.get_vram_usage_mb.assert_called_once()
+    mock_llm.warmup.assert_called_once()
+    mock_recorder.open.assert_called_once()
+    mock_hotkey.start.assert_called_once()
+
+
+@patch("vox.app.TextInserter")
+@patch("vox.app.LLMFormatter")
+@patch("vox.app.create_stt_engine")
+@patch("vox.app.AudioRecorder")
+@patch("vox.app.HotkeyListener")
+def test_start_stt_failure_propagates(
+    mock_hotkey_cls,
+    mock_recorder_cls,
+    mock_stt_factory,
+    mock_llm_cls,
+    mock_inserter_cls,
+):
+    """When STT load_model() fails, start() should raise and not open recorder/hotkey."""
+    from vox.app import VoxApp
+
+    config = AppConfig()
+
+    mock_stt = MagicMock()
+    mock_stt.load_model.side_effect = RuntimeError("CUDA out of memory")
+    mock_stt_factory.return_value = mock_stt
+
+    mock_llm = MagicMock()
+    mock_llm_cls.return_value = mock_llm
+
+    mock_recorder = MagicMock()
+    mock_recorder_cls.return_value = mock_recorder
+
+    mock_hotkey = MagicMock()
+    mock_hotkey_cls.return_value = mock_hotkey
+
+    app = VoxApp(config)
+
+    with pytest.raises(RuntimeError, match="CUDA out of memory"):
+        app.start()
+
+    mock_recorder.open.assert_not_called()
+    mock_hotkey.start.assert_not_called()
+
+
+@patch("vox.app.TextInserter")
+@patch("vox.app.LLMFormatter")
+@patch("vox.app.create_stt_engine")
+@patch("vox.app.AudioRecorder")
+@patch("vox.app.HotkeyListener")
+def test_start_llm_warmup_failure_does_not_crash(
+    mock_hotkey_cls,
+    mock_recorder_cls,
+    mock_stt_factory,
+    mock_llm_cls,
+    mock_inserter_cls,
+):
+    """When LLM warmup() fails, start() should still succeed."""
+    from vox.app import VoxApp
+
+    config = AppConfig()
+
+    mock_stt = MagicMock()
+    mock_stt_factory.return_value = mock_stt
+
+    mock_llm = MagicMock()
+    mock_llm.warmup.side_effect = ConnectionError("Ollama not running")
+    mock_llm_cls.return_value = mock_llm
+
+    mock_recorder = MagicMock()
+    mock_recorder_cls.return_value = mock_recorder
+
+    mock_hotkey = MagicMock()
+    mock_hotkey_cls.return_value = mock_hotkey
+
+    app = VoxApp(config)
+    app.start()
+
+    mock_stt.load_model.assert_called_once()
+    mock_recorder.open.assert_called_once()
+    mock_hotkey.start.assert_called_once()

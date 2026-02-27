@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 from vox.config import AppConfig
 from vox.hotkey import HotkeyListener
@@ -39,15 +41,42 @@ class VoxApp:
         logger.info("STT engine: %s", self._config.stt.engine)
         logger.info("LLM model: %s", self._config.llm.model)
 
-        logger.info("Loading STT model...")
-        self._stt.load_model()
-        vram = self._stt.get_vram_usage_mb()
-        logger.info("STT model loaded (VRAM: ~%dMB)", vram)
+        t0 = time.monotonic()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            stt_future = pool.submit(self._load_stt)
+            llm_future = pool.submit(self._warmup_llm)
+
+            # STT is required — propagate failure
+            stt_future.result()
+            # LLM warmup is best-effort — already logged inside _warmup_llm
+            llm_future.result()
+
+        elapsed = time.monotonic() - t0
+        logger.info("Model loading completed in %.1fs", elapsed)
 
         self._recorder.open()
         self._hotkey.start()
         trigger = self._config.hotkey.trigger_key
         logger.info("=== Vox ready — press and hold %s to speak ===", trigger)
+
+    def _load_stt(self) -> None:
+        """Load the STT model (runs in thread pool)."""
+        t0 = time.monotonic()
+        logger.info("Loading STT model...")
+        self._stt.load_model()
+        vram = self._stt.get_vram_usage_mb()
+        elapsed = time.monotonic() - t0
+        logger.info("STT model loaded in %.1fs (VRAM: ~%dMB)", elapsed, vram)
+
+    def _warmup_llm(self) -> None:
+        """Warm up the LLM (runs in thread pool). Failures are non-fatal."""
+        try:
+            t0 = time.monotonic()
+            self._llm.warmup()
+            elapsed = time.monotonic() - t0
+            logger.info("LLM warmup completed in %.1fs", elapsed)
+        except Exception:
+            logger.warning("LLM warmup failed, continuing without warmup", exc_info=True)
 
     def stop(self) -> None:
         """Stop the application, waiting for any in-flight work."""

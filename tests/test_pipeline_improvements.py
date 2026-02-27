@@ -282,7 +282,7 @@ def test_single_line_collapses_multiple_spaces(mock_openai_cls):
 
     config = LLMConfig(output_format="single_line")
     formatter = LLMFormatter(config)
-    result = formatter.format_text("test input")
+    result = formatter.format_text("word1 word2")
 
     assert result == "word1 word2"
 
