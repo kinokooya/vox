@@ -2,6 +2,9 @@ stt:
   engine: "faster-whisper"  # or "sensevoice"
   word_replacements:
     クロードコード: "Claude Code"
+    クロートコード: "Claude Code"
+    クロード コード: "Claude Code"
+    クロート コード: "Claude Code"
   faster_whisper:
     model: "large-v3-turbo"
     device: "cuda"

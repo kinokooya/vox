@@ -101,6 +101,7 @@ class VoxApp:
                 logger.info("Pipeline cooldown active, ignoring key press")
                 return
             self._recording_active = True
+        self._inserter.restore_clipboard_if_pending()
         self._recorder.start()
 
     def _on_key_release(self) -> None:

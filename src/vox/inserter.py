@@ -50,36 +50,46 @@ class TextInserter:
 
     def __init__(self, config: InsertionConfig) -> None:
         self._config = config
+        self._pending_clipboard: str | None = None
 
     def insert(self, text: str) -> None:
         """Insert text into the active window.
 
-        Saves the current clipboard, sets the text, sends WM_PASTE,
-        then restores the original clipboard content.
+        Saves the current clipboard, sets the text, sends WM_PASTE.
+        Clipboard is restored lazily on next insert() or via
+        restore_clipboard_if_pending().
         """
         if not text:
             logger.warning("Empty text, skipping insertion")
             return
 
-        captured = False
-        original_clipboard = ""
+        # Restore any previous pending clipboard first
+        self._do_restore()
+
         if self._config.restore_clipboard:
             try:
-                original_clipboard = pyperclip.paste()
-                captured = True
+                self._pending_clipboard = pyperclip.paste()
             except Exception:
                 logger.warning("Could not read clipboard, will not restore")
+                self._pending_clipboard = None
 
         pyperclip.copy(text)
         time.sleep(self._config.pre_paste_delay_ms / 1000.0)
 
+        _send_paste()
+        logger.info("Text inserted: %d chars", len(text))
+
+    def restore_clipboard_if_pending(self) -> None:
+        """Restore clipboard if a previous insert left content pending."""
+        self._do_restore()
+
+    def _do_restore(self) -> None:
+        if self._pending_clipboard is None:
+            return
         try:
-            _send_paste()
-            logger.info("Text inserted: %d chars", len(text))
+            pyperclip.copy(self._pending_clipboard)
+            logger.debug("Clipboard restored")
+        except Exception:
+            logger.warning("Could not restore clipboard")
         finally:
-            if self._config.restore_clipboard and captured:
-                time.sleep(0.1)  # Wait for paste to complete
-                try:
-                    pyperclip.copy(original_clipboard)
-                except Exception:
-                    logger.warning("Could not restore clipboard")
+            self._pending_clipboard = None
