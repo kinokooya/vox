@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
+from difflib import SequenceMatcher
 
 from openai import OpenAI
 
@@ -52,6 +54,11 @@ FEW_SHOT_EXAMPLES = [
 
 _DELIMITER_START = "【音声入力】"
 _DELIMITER_END = "【/音声入力】"
+
+_FILLERS = ["えーと", "あのー", "あの", "まあ", "えー", "うーん", "えっと", "ええと"]
+_PUNCT_RE = re.compile(r"[、。！？.,!?\s\n]+")
+_SM_THRESHOLD = 0.5
+_NOVEL_THRESHOLD = 0.5
 
 
 class LLMFormatter:
@@ -108,6 +115,12 @@ class LLMFormatter:
         result = self._strip_delimiters(result)
         result = self._normalize_output(result)
 
+        if not self._is_valid_formatting(raw_text, result):
+            logger.warning(
+                "LLM output failed semantic validation, falling back to raw text"
+            )
+            return raw_text.strip()
+
         if len(result) > len(raw_text) * 1.5 + 10:
             logger.warning(
                 "LLM output too long (%d chars vs %d input), falling back to raw text",
@@ -140,6 +153,81 @@ class LLMFormatter:
         text = text.replace(_DELIMITER_START, "")
         text = text.replace(_DELIMITER_END, "")
         return text.strip()
+
+    def _is_valid_formatting(self, raw_input: str, llm_output: str) -> bool:
+        """Check if LLM output is a valid formatting of the input (not an answer).
+
+        Uses SequenceMatcher as primary check and novel content ratio as safety net.
+        """
+        norm_in = _PUNCT_RE.sub("", raw_input)
+        norm_out = _PUNCT_RE.sub("", llm_output)
+
+        if not norm_in:
+            return True
+
+        # Primary: SequenceMatcher ratio
+        ratio = SequenceMatcher(None, norm_in, norm_out).ratio()
+        logger.debug("Validation SM ratio=%.4f (threshold=%.2f)", ratio, _SM_THRESHOLD)
+        if ratio >= _SM_THRESHOLD:
+            return True
+
+        # Retry after stripping fillers from input
+        stripped_in = _PUNCT_RE.sub("", self._strip_known_fillers(raw_input))
+        if stripped_in:
+            ratio_stripped = SequenceMatcher(None, stripped_in, norm_out).ratio()
+            logger.debug(
+                "Validation SM ratio (filler-stripped)=%.4f", ratio_stripped
+            )
+            if ratio_stripped >= _SM_THRESHOLD:
+                return True
+
+        # Safety net: novel content ratio
+        novel = self._novel_content_ratio(raw_input, llm_output)
+        logger.debug(
+            "Validation novel=%.4f (threshold=%.2f)", novel, _NOVEL_THRESHOLD
+        )
+        if novel > _NOVEL_THRESHOLD:
+            return False
+
+        logger.warning(
+            "Validation passed by default: SM=%.4f, novel=%.4f — input=%r, output=%r",
+            ratio,
+            novel,
+            raw_input[:50],
+            llm_output[:50],
+        )
+        return True
+
+    @staticmethod
+    def _strip_known_fillers(text: str) -> str:
+        """Remove known Japanese filler words from text."""
+        for filler in _FILLERS:
+            text = text.replace(filler, "")
+        return text
+
+    @staticmethod
+    def _novel_content_ratio(raw_input: str, llm_output: str) -> float:
+        """Calculate the ratio of content characters in output that are not in input."""
+        input_chars = LLMFormatter._extract_content_chars(raw_input)
+        output_chars = LLMFormatter._extract_content_chars(llm_output)
+
+        if not output_chars:
+            return 0.0
+
+        novel_chars = output_chars - input_chars
+        return len(novel_chars) / len(output_chars)
+
+    @staticmethod
+    def _extract_content_chars(text: str) -> set[str]:
+        """Extract content characters (CJK ideographs, katakana, latin letters)."""
+        result: set[str] = set()
+        for ch in text:
+            cat = unicodedata.category(ch)
+            # Lo = CJK ideographs, katakana, hiragana etc.
+            # Lu/Ll = Latin upper/lower
+            if cat in ("Lo", "Lu", "Ll"):
+                result.add(ch)
+        return result
 
     def _normalize_output(self, text: str) -> str:
         """Normalize output based on output_format config."""
