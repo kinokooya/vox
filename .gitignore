@@ -46,6 +46,12 @@ models/
 # Logs
 *.log
 
+# PID files
+*.pid
+
+# Docs (non-tracked)
+docs/workflow-improvements.md
+
 # Testing / linting caches
 .pytest_cache/
 .mypy_cache/

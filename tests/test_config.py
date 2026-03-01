@@ -11,11 +11,49 @@ from vox.config import AppConfig, AudioConfig, LLMConfig, load_config
 def test_default_config():
     config = AppConfig()
     assert config.stt.engine == "faster-whisper"
-    assert config.llm.model == "qwen2.5:7b-instruct-q4_K_M"
+    assert config.llm.model == "qwen3:8b"
     assert config.hotkey.trigger_key == "alt_r"
     assert config.audio.sample_rate == 16000
     assert config.audio.max_duration_sec == 60
+    assert config.llm.enabled is True
     assert config.insertion.restore_clipboard is True
+
+
+def test_faster_whisper_new_defaults():
+    config = AppConfig()
+    fw = config.stt.faster_whisper
+    assert fw.beam_size == 5
+    assert fw.hotwords is None
+    assert fw.repetition_penalty == 1.0
+    assert fw.patience == 1.0
+    assert fw.initial_prompt is None
+
+
+def test_word_replacements_default_empty():
+    config = AppConfig()
+    assert config.stt.word_replacements == {}
+
+
+def test_word_replacements_from_yaml(tmp_path: Path):
+    data = {
+        "stt": {
+            "word_replacements": {"クロードコード": "Claude Code", "ギットハブ": "GitHub"},
+            "faster_whisper": {
+                "hotwords": "Claude Code, GitHub",
+                "repetition_penalty": 1.1,
+                "patience": 2.0,
+            },
+        },
+    }
+    path = tmp_path / "config.yaml"
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.dump(data, f, allow_unicode=True)
+
+    config = load_config(path)
+    assert config.stt.word_replacements == {"クロードコード": "Claude Code", "ギットハブ": "GitHub"}
+    assert config.stt.faster_whisper.hotwords == "Claude Code, GitHub"
+    assert config.stt.faster_whisper.repetition_penalty == 1.1
+    assert config.stt.faster_whisper.patience == 2.0
 
 
 def test_load_config_from_yaml(tmp_path: Path):

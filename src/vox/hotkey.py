@@ -54,6 +54,8 @@ class HotkeyListener:
         """Enable or disable hotkey processing."""
         with self._lock:
             self._enabled = enabled
+            if not enabled:
+                self._is_pressed = False
 
     def start(self) -> None:
         """Start listening for hotkey events in a background thread."""
@@ -88,7 +90,8 @@ class HotkeyListener:
         if key not in self._trigger_keys:
             return
         with self._lock:
-            if not self._is_pressed:
+            if not self._enabled or not self._is_pressed:
+                self._is_pressed = False
                 return
             self._is_pressed = False
         logger.debug("Trigger key released")

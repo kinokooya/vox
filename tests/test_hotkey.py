@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 from pynput import keyboard
 
 from vox.config import HotkeyConfig
-from vox.hotkey import HotkeyListener, _KEY_ALIASES, _KEY_MAP
+from vox.hotkey import _KEY_ALIASES, _KEY_MAP, HotkeyListener
 
 
 def test_key_aliases_alt_r_contains_alt_gr():
@@ -51,3 +51,43 @@ def test_hotkey_listener_alt_gr_release_fires_callback():
     listener._handle_press(keyboard.Key.alt_gr)
     listener._handle_release(keyboard.Key.alt_gr)
     on_release.assert_called_once()
+
+
+def test_release_while_disabled_does_not_fire_callback():
+    """Release event while disabled should not fire on_release callback."""
+    on_press = MagicMock()
+    on_release = MagicMock()
+    config = HotkeyConfig(trigger_key="alt_r")
+    listener = HotkeyListener(config, on_press=on_press, on_release=on_release)
+
+    # Press while enabled, then disable, then release
+    listener._handle_press(keyboard.Key.alt_r)
+    listener.set_enabled(False)
+    listener._handle_release(keyboard.Key.alt_r)
+
+    on_release.assert_not_called()
+
+
+def test_set_enabled_false_resets_is_pressed():
+    """set_enabled(False) should clear _is_pressed so stale state doesn't linger."""
+    on_press = MagicMock()
+    on_release = MagicMock()
+    config = HotkeyConfig(trigger_key="alt_r")
+    listener = HotkeyListener(config, on_press=on_press, on_release=on_release)
+
+    listener._handle_press(keyboard.Key.alt_r)
+    assert listener._is_pressed is True
+
+    listener.set_enabled(False)
+    assert listener._is_pressed is False
+
+
+def test_release_without_press_does_not_fire_callback():
+    """Release event without prior press should not fire on_release callback."""
+    on_press = MagicMock()
+    on_release = MagicMock()
+    config = HotkeyConfig(trigger_key="alt_r")
+    listener = HotkeyListener(config, on_press=on_press, on_release=on_release)
+
+    listener._handle_release(keyboard.Key.alt_r)
+    on_release.assert_not_called()

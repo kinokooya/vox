@@ -23,14 +23,37 @@ def _register_cuda_dll_dirs() -> None:
             os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
 
 
-def main() -> None:
-    _register_cuda_dll_dirs()
+def _setup_logging() -> None:
+    """Configure logging. Use file output when stderr is unavailable (pythonw.exe)."""
+    log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    date_format = "%H:%M:%S"
+
+    handlers: list[logging.Handler] = []
+
+    if sys.stderr is not None:
+        handlers.append(logging.StreamHandler())
+
+    # Always write to log file for debugging
+    log_path = Path(__file__).resolve().parent.parent.parent / "vox.log"
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    handlers.append(file_handler)
 
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
+        format=log_format,
+        datefmt=date_format,
+        handlers=handlers,
     )
+
+
+def _pid_path() -> Path:
+    """Return the path to the PID file (project root / vox.pid)."""
+    return Path(__file__).resolve().parent.parent.parent / "vox.pid"
+
+
+def main() -> None:
+    _register_cuda_dll_dirs()
+    _setup_logging()
 
     config_path = Path("config.yaml")
     if len(sys.argv) > 1:
@@ -39,8 +62,16 @@ def main() -> None:
     config = load_config(config_path)
     app = VoxApp(config)
 
+    # Write PID file so stop.bat can find us.
+    # On Windows, venv pythonw.exe is a launcher trampoline that spawns the
+    # real Python interpreter as a child process.  Record both the launcher
+    # (parent) PID and the real (self) PID so stop.bat can kill the full tree.
+    pid_file = _pid_path()
+    pid_file.write_text(f"{os.getppid()}\n{os.getpid()}\n", encoding="utf-8")
+
     def shutdown(signum: int, frame: object) -> None:
         app.stop()
+        pid_file.unlink(missing_ok=True)
         sys.exit(0)
 
     signal.signal(signal.SIGINT, shutdown)
@@ -61,6 +92,7 @@ def main() -> None:
             pass
     finally:
         app.stop()
+        pid_file.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
