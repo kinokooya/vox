@@ -58,6 +58,7 @@ _DELIMITER_END = "【/音声入力】"
 
 _FILLERS = ["えーと", "あのー", "あの", "まあ", "えー", "うーん", "えっと", "ええと"]
 _PUNCT_RE = re.compile(r"[、。！？.,!?\s\n]+")
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 _SM_THRESHOLD = 0.5
 _NOVEL_THRESHOLD = 0.5
 
@@ -112,6 +113,7 @@ class LLMFormatter:
         )
 
         result = response.choices[0].message.content or ""
+        result = _THINK_RE.sub("", result)
         result = result.strip()
         result = self._strip_delimiters(result)
         result = self._normalize_output(result)

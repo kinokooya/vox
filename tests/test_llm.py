@@ -194,6 +194,27 @@ def test_format_text_strips_delimiters(mock_openai_cls):
     assert result == "テスト出力"
 
 
+@patch("vox.llm.OpenAI")
+def test_format_text_strips_think_tags(mock_openai_cls):
+    """Qwen3 thinking tags should be stripped from output."""
+    mock_client = MagicMock()
+    mock_openai_cls.return_value = mock_client
+
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = (
+        "<think>\nフィラーを除去して句読点を追加します。\n</think>\n"
+        "Dockerコンテナをビルドしたい。"
+    )
+    mock_client.chat.completions.create.return_value = mock_response
+
+    config = LLMConfig()
+    formatter = LLMFormatter(config)
+    result = formatter.format_text("えーとDockerコンテナをビルドしたい")
+
+    assert result == "Dockerコンテナをビルドしたい。"
+
+
 # ---------------------------------------------------------------------------
 # Semantic validation tests
 # ---------------------------------------------------------------------------
