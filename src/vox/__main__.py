@@ -46,6 +46,11 @@ def _setup_logging() -> None:
     )
 
 
+def _pid_path() -> Path:
+    """Return the path to the PID file (project root / vox.pid)."""
+    return Path(__file__).resolve().parent.parent.parent / "vox.pid"
+
+
 def main() -> None:
     _register_cuda_dll_dirs()
     _setup_logging()
@@ -57,8 +62,13 @@ def main() -> None:
     config = load_config(config_path)
     app = VoxApp(config)
 
+    # Write PID file so stop.bat can find us
+    pid_file = _pid_path()
+    pid_file.write_text(str(os.getpid()), encoding="utf-8")
+
     def shutdown(signum: int, frame: object) -> None:
         app.stop()
+        pid_file.unlink(missing_ok=True)
         sys.exit(0)
 
     signal.signal(signal.SIGINT, shutdown)
@@ -79,6 +89,7 @@ def main() -> None:
             pass
     finally:
         app.stop()
+        pid_file.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
