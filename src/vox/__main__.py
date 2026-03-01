@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import signal
+import subprocess
 import sys
 from pathlib import Path
 
@@ -51,9 +52,63 @@ def _pid_path() -> Path:
     return Path(__file__).resolve().parent.parent.parent / "vox.pid"
 
 
+def _kill_existing_instances() -> None:
+    """Kill any existing Vox processes before starting."""
+    logger = logging.getLogger(__name__)
+    my_pid = os.getpid()
+    my_ppid = os.getppid()
+    # On Windows venv, python.exe is a trampoline launcher that spawns the
+    # real interpreter as a child.  We must exclude both our own PID and the
+    # launcher (parent) PID to avoid killing ourselves.
+    my_pids = {my_pid, my_ppid}
+    pid_file = _pid_path()
+
+    # 1. PID ファイルがあればそのプロセスを停止
+    if pid_file.exists():
+        for line in pid_file.read_text().strip().splitlines():
+            try:
+                pid = int(line.strip())
+                if pid not in my_pids:
+                    subprocess.run(
+                        ["taskkill", "/F", "/PID", str(pid)],
+                        capture_output=True, timeout=5,
+                    )
+            except (ValueError, subprocess.TimeoutExpired, OSError):
+                pass
+        pid_file.unlink(missing_ok=True)
+
+    # 2. コマンドラインで vox プロセスを検出して停止（PID ファイルが欠損しても動作）
+    try:
+        result = subprocess.run(
+            [
+                "powershell", "-NoProfile", "-Command",
+                "Get-CimInstance Win32_Process"
+                " -Filter \"Name='pythonw.exe' or Name='python.exe'\" |"
+                " Where-Object { $_.CommandLine -match '-m\\s+vox'"
+                f" -and $_.ProcessId -ne {my_pid}"
+                f" -and $_.ProcessId -ne {my_ppid} }} |"
+                " Select-Object -ExpandProperty ProcessId",
+            ],
+            capture_output=True, text=True, timeout=10,
+        )
+        for line in result.stdout.strip().splitlines():
+            try:
+                pid = int(line.strip())
+                subprocess.run(
+                    ["taskkill", "/F", "/PID", str(pid)],
+                    capture_output=True, timeout=5,
+                )
+                logger.info("Killed existing Vox process (PID %d)", pid)
+            except (ValueError, subprocess.TimeoutExpired):
+                pass
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+
+
 def main() -> None:
     _register_cuda_dll_dirs()
     _setup_logging()
+    _kill_existing_instances()
 
     config_path = Path("config.yaml")
     if len(sys.argv) > 1:
