@@ -2,15 +2,14 @@
 
 Windows向けAI音声入力ツール。Push-to-Talk方式（キー長押し）で音声をテキストに変換し、アクティブなテキストフィールドに自動挿入する。
 
-音声認識とテキスト整形はすべてローカルで実行され、外部サーバーへの通信は一切行わない。
+音声認識はすべてローカルで実行され、外部サーバーへの通信は一切行わない。
 
 ## 特徴
 
 - **完全ローカル処理** -- 音声データもテキストもネットワークに送信しない
-- **ローカルSTT** -- faster-whisper (Whisper large-v3-turbo) による高精度な音声認識
-- **ローカルLLM整形 (オプション)** -- Ollama (Qwen3-8B) でフィラー除去・文法修正・文章再構成を自動実行。`llm.enabled: false` で無効化可能
-- **低遅延** -- LLM無効時は発話終了から約2秒でテキスト挿入完了
-- **日本語 + 英語技術用語の混在入力に対応**
+- **高精度STT** -- faster-whisper (Whisper large-v3-turbo) による音声認識。日本語 + 英語技術用語の混在入力に対応
+- **低遅延** -- 発話終了から約2秒でテキスト挿入完了
+- **LLM整形 (オプション)** -- Ollama (Qwen3-8B) によるフィラー除去・文法修正。必要に応じて `llm.enabled: true` で有効化
 
 ## 必要環境
 
@@ -19,9 +18,9 @@ Windows向けAI音声入力ツール。Push-to-Talk方式（キー長押し）�
 | OS | Windows 10 / 11 |
 | GPU | NVIDIA GPU (CUDA対応、VRAM 10GB以上推奨) |
 | Python | 3.11以上 |
-| LLMサーバー | [Ollama](https://ollama.com) (LLM整形を使う場合のみ) |
 | マイク | 任意の入力デバイス |
-| ストレージ | モデルファイル用に約15GB |
+| ストレージ | モデルファイル用に約5GB |
+| LLMサーバー | [Ollama](https://ollama.com) (LLM整形を有効にする場合のみ) |
 
 ## セットアップ
 
@@ -41,18 +40,24 @@ pip install -e ".[dev]"
 # 4. CUDA ランタイム (pip 経由、PATH 設定不要)
 pip install nvidia-cublas-cu12 nvidia-cuda-runtime-cu12
 
-# 5. Ollama インストール + モデル取得 (LLM整形を使う場合のみ)
-# https://ollama.com からインストーラをダウンロード・実行
-ollama pull qwen3:8b
-
-# 6. 動作確認
+# 5. 動作確認
 pytest tests/ -v
 
-# 7. 起動
+# 6. 起動
 python -m vox
 ```
 
 初回起動時に faster-whisper のモデル (~3GB) が自動ダウンロードされる。
+
+### LLM整形を有効にする場合（オプション）
+
+```powershell
+# Ollama インストール + モデル取得
+# https://ollama.com からインストーラをダウンロード・実行
+ollama pull qwen3:8b
+```
+
+`config.yaml` で `llm.enabled: true` に変更する。
 
 ## 使い方
 
@@ -66,9 +71,9 @@ python -m vox
 
 1. **右Ctrlキーを長押し** -- 録音開始
 2. **マイクに向かって話す** -- 最大60秒
-3. **右Ctrlキーを離す** -- 録音停止、STT → LLM整形 → テキスト挿入が自動実行される
+3. **右Ctrlキーを離す** -- 録音停止 → STT → テキスト挿入が自動実行される
 
-整形済みテキストがクリップボード経由でアクティブなテキストフィールドに貼り付けられる。
+変換されたテキストがクリップボード経由でアクティブなテキストフィールドに貼り付けられる。
 
 カスタム設定ファイルを指定して起動することもできる:
 
@@ -82,7 +87,9 @@ python -m vox path/to/custom-config.yaml
 
 ```yaml
 stt:
-  engine: "faster-whisper"       # STTエンジン ("faster-whisper" or "sensevoice")
+  engine: "faster-whisper"       # STTエンジン
+  word_replacements:             # STT出力の単語置換 (カタカナ→英語表記等)
+    クロードコード: "Claude Code"
   faster_whisper:
     model: "large-v3-turbo"      # Whisper モデル
     device: "cuda"
@@ -90,11 +97,9 @@ stt:
     language: "ja"
 
 llm:
-  enabled: true                          # false でLLM整形を無効化 (STT出力をそのまま使用)
-  model: "qwen3:8b"                      # Ollama モデル名
+  enabled: false                 # true でLLM整形を有効化 (デフォルト: 無効)
+  model: "qwen3:8b"              # Ollama モデル名
   base_url: "http://localhost:11434/v1"
-  temperature: 0.3
-  max_tokens: 512
 
 hotkey:
   trigger_key: "ctrl_r"          # トリガーキー
@@ -121,10 +126,10 @@ insertion:
          STT (faster-whisper)
                 |
                 v
-         LLM整形 (Ollama / Qwen3, llm.enabled: true の場合)
+         LLM整形 (オプション、有効時のみ)
                 |
                 v
-         テキスト挿入 (clipboard + Ctrl+V)
+         テキスト挿入 (clipboard + WM_PASTE)
 ```
 
 ### モジュール構成
@@ -135,7 +140,7 @@ src/vox/
 ├── app.py         VoxApp (パイプラインオーケストレータ)
 ├── config.py      Pydantic 設定モデル
 ├── hotkey.py      HotkeyListener (pynput)
-├── inserter.py    TextInserter (clipboard + Win32 Ctrl+V)
+├── inserter.py    TextInserter (clipboard + WM_PASTE)
 ├── llm.py         LLMFormatter (OpenAI互換API)
 ├── recorder.py    AudioRecorder (sounddevice)
 └── stt/
