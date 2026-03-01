@@ -7,13 +7,18 @@ if not exist vox.pid (
     exit /b 1
 )
 
-set /p PID=<vox.pid
-taskkill /PID %PID% >nul 2>&1
+REM vox.pid contains one PID per line (launcher + real python process).
+REM Kill each to ensure the full process tree is terminated.
+set KILLED=0
+for /f %%p in (vox.pid) do (
+    taskkill /F /PID %%p >nul 2>&1
+    if not errorlevel 1 set KILLED=1
+)
 
-if %errorlevel% equ 0 (
-    echo Vox stopped (PID %PID%).
+if %KILLED% equ 1 (
+    echo Vox stopped.
 ) else (
-    echo Vox process (PID %PID%) not found. Cleaning up stale PID file.
+    echo Vox process not found. Cleaning up stale PID file.
 )
 
 del vox.pid >nul 2>&1

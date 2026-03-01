@@ -62,9 +62,12 @@ def main() -> None:
     config = load_config(config_path)
     app = VoxApp(config)
 
-    # Write PID file so stop.bat can find us
+    # Write PID file so stop.bat can find us.
+    # On Windows, venv pythonw.exe is a launcher trampoline that spawns the
+    # real Python interpreter as a child process.  Record both the launcher
+    # (parent) PID and the real (self) PID so stop.bat can kill the full tree.
     pid_file = _pid_path()
-    pid_file.write_text(str(os.getpid()), encoding="utf-8")
+    pid_file.write_text(f"{os.getppid()}\n{os.getpid()}\n", encoding="utf-8")
 
     def shutdown(signum: int, frame: object) -> None:
         app.stop()
