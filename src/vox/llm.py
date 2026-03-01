@@ -118,6 +118,13 @@ class LLMFormatter:
         result = self._strip_delimiters(result)
         result = self._normalize_output(result)
 
+        if not result:
+            logger.warning(
+                "LLM returned empty output (likely thinking-only), "
+                "falling back to raw text"
+            )
+            return raw_text.strip()
+
         if not self._is_valid_formatting(raw_text, result):
             logger.warning(
                 "LLM output failed semantic validation, falling back to raw text"

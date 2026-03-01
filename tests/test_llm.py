@@ -215,6 +215,28 @@ def test_format_text_strips_think_tags(mock_openai_cls):
     assert result == "Dockerコンテナをビルドしたい。"
 
 
+@patch("vox.llm.OpenAI")
+def test_format_text_think_only_falls_back(mock_openai_cls):
+    """When LLM returns only <think> tags with no actual output, fall back to raw text."""
+    mock_client = MagicMock()
+    mock_openai_cls.return_value = mock_client
+
+    raw = "結構この音声認識の精度が良いですね"
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = (
+        "<think>\nこの入力は音声認識の精度について述べています。\n"
+        "整形して返します。\n</think>"
+    )
+    mock_client.chat.completions.create.return_value = mock_response
+
+    config = LLMConfig()
+    formatter = LLMFormatter(config)
+    result = formatter.format_text(raw)
+
+    assert result == raw.strip()
+
+
 # ---------------------------------------------------------------------------
 # Semantic validation tests
 # ---------------------------------------------------------------------------
