@@ -51,10 +51,19 @@ vox/
 │       ├── base.py                  # STTEngine ABC (抽象基底クラス)
 │       ├── factory.py               # エンジンファクトリ (config → 実装選択)
 │       └── faster_whisper_engine.py # FasterWhisperEngine 実装
-└── tests/
-    ├── test_config.py               # 設定テスト (6件)
-    ├── test_llm.py                  # LLMフォーマッタテスト (3件)
-    └── test_stt.py                  # STTインターフェーステスト (4件)
+├── start.bat                       # Windows ショートカット用起動スクリプト
+├── start.sh                        # bash 用起動スクリプト
+├── stop.bat                        # プロセス終了スクリプト (PIDファイル経由)
+└── tests/                          # テスト (114件)
+    ├── test_app.py                  # パイプライン統合テスト
+    ├── test_config.py               # 設定テスト
+    ├── test_hallucination.py        # ハルシネーション検出テスト
+    ├── test_hotkey.py               # ホットキーテスト
+    ├── test_llm.py                  # LLMフォーマッタテスト
+    ├── test_media.py                # メディア自動停止テスト
+    ├── test_pipeline_improvements.py # パイプライン改善テスト
+    ├── test_recorder.py             # 録音テスト
+    └── test_stt.py                  # STTインターフェーステスト
 ```
 
 ---
