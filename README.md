@@ -8,8 +8,8 @@ Windows向けAI音声入力ツール。Push-to-Talk方式（キー長押し）�
 
 - **完全ローカル処理** -- 音声データもテキストもネットワークに送信しない
 - **ローカルSTT** -- faster-whisper (Whisper large-v3-turbo) による高精度な音声認識
-- **ローカルLLM整形** -- Ollama (Qwen2.5-7B) でフィラー除去・文法修正・文章再構成を自動実行
-- **低遅延** -- 15秒程度の発話に対して約2〜5秒でテキスト挿入完了
+- **ローカルLLM整形 (オプション)** -- Ollama (Qwen3-8B) でフィラー除去・文法修正・文章再構成を自動実行。`llm.enabled: false` で無効化可能
+- **低遅延** -- LLM無効時は発話終了から約2秒でテキスト挿入完了
 - **日本語 + 英語技術用語の混在入力に対応**
 
 ## 必要環境
@@ -19,7 +19,7 @@ Windows向けAI音声入力ツール。Push-to-Talk方式（キー長押し）�
 | OS | Windows 10 / 11 |
 | GPU | NVIDIA GPU (CUDA対応、VRAM 10GB以上推奨) |
 | Python | 3.11以上 |
-| LLMサーバー | [Ollama](https://ollama.com) |
+| LLMサーバー | [Ollama](https://ollama.com) (LLM整形を使う場合のみ) |
 | マイク | 任意の入力デバイス |
 | ストレージ | モデルファイル用に約15GB |
 
@@ -41,9 +41,9 @@ pip install -e ".[dev]"
 # 4. CUDA ランタイム (pip 経由、PATH 設定不要)
 pip install nvidia-cublas-cu12 nvidia-cuda-runtime-cu12
 
-# 5. Ollama インストール + モデル取得
+# 5. Ollama インストール + モデル取得 (LLM整形を使う場合のみ)
 # https://ollama.com からインストーラをダウンロード・実行
-ollama pull qwen2.5:7b-instruct-q4_K_M
+ollama pull qwen3:8b
 
 # 6. 動作確認
 pytest tests/ -v
@@ -59,6 +59,8 @@ python -m vox
 ```
 python -m vox
 ```
+
+または Windows ショートカットから `start.bat` を実行（実行時の大きさ: 最小化 推奨）。
 
 起動後、`=== Vox ready — press and hold ctrl_r to speak ===` と表示されれば準備完了。
 
@@ -88,10 +90,11 @@ stt:
     language: "ja"
 
 llm:
-  model: "qwen2.5:7b-instruct-q4_K_M"  # Ollama モデル名
+  enabled: true                          # false でLLM整形を無効化 (STT出力をそのまま使用)
+  model: "qwen3:8b"                      # Ollama モデル名
   base_url: "http://localhost:11434/v1"
   temperature: 0.3
-  max_tokens: 1024
+  max_tokens: 512
 
 hotkey:
   trigger_key: "ctrl_r"          # トリガーキー
@@ -118,7 +121,7 @@ insertion:
          STT (faster-whisper)
                 |
                 v
-         LLM整形 (Ollama / Qwen2.5)
+         LLM整形 (Ollama / Qwen3, llm.enabled: true の場合)
                 |
                 v
          テキスト挿入 (clipboard + Ctrl+V)

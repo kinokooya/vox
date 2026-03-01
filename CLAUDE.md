@@ -6,7 +6,7 @@
 
 ## プロジェクト概要
 
-Windows向けデスクトップ常駐型の音声入力ツール。Push-to-Talk方式（右Alt長押し）でマイク入力を受け付け、ローカルSTT (faster-whisper) + ローカルLLM (Ollama/Qwen2.5) でテキスト整形し、アクティブなテキストフィールドにクリップボード経由で自動挿入する。
+Windows向けデスクトップ常駐型の音声入力ツール。Push-to-Talk方式（右Ctrl長押し）でマイク入力を受け付け、ローカルSTT (faster-whisper) でテキスト変換し、アクティブなテキストフィールドにクリップボード経由で自動挿入する。オプションでローカルLLM (Ollama/Qwen3) によるテキスト整形も可能（`llm.enabled` で切替）。
 
 - 対象環境: Windows 10/11, RTX 5070 Ti (16GB VRAM)
 - 言語: Python 3.11+
@@ -15,7 +15,7 @@ Windows向けデスクトップ常駐型の音声入力ツール。Push-to-Talk�
 
 ## 現在のステータス
 
-- **Phase 1 MVP: 実装完了・Windows 実機テスト済み** (テスト24件全通過)
+- **Phase 1 MVP: 実装完了・Windows 実機テスト済み** (テスト106件全通過)
 - Phase 2: 未着手
 
 ## ファイル構造
@@ -25,14 +25,17 @@ src/vox/
 ├── __main__.py          # エントリポイント
 ├── app.py               # VoxApp パイプラインオーケストレータ
 ├── config.py            # Pydantic設定 (AppConfig)
-├── hotkey.py            # HotkeyListener (pynput, 右Alt)
-├── inserter.py          # TextInserter (clipboard + Win32 Ctrl+V)
+├── hotkey.py            # HotkeyListener (pynput, 右Ctrl)
+├── inserter.py          # TextInserter (clipboard + WM_PASTE)
 ├── llm.py               # LLMFormatter (OpenAI互換API)
 ├── recorder.py          # AudioRecorder (sounddevice)
 └── stt/
     ├── base.py           # STTEngine ABC
     ├── factory.py        # create_stt_engine()
     └── faster_whisper_engine.py
+
+start.bat                # Windows ショートカット用起動スクリプト
+start.sh                 # bash 用起動スクリプト
 ```
 
 ## 開発ルール
@@ -85,12 +88,15 @@ pytest tests/ -v
 # 実行
 python -m vox
 # または: python -m vox path/to/custom-config.yaml
+
+# Windows ショートカットから起動
+# start.bat をショートカットに登録（実行時の大きさ: 最小化）
 ```
 
 ## アーキテクチャ要点
 
-- **パイプライン**: 右Ctrl押下→録音→右Ctrl解放→STT→LLM→クリップボード挿入
+- **パイプライン**: 右Ctrl押下→録音→右Ctrl解放→STT→(LLM)→クリップボード挿入
 - **STT抽象化**: `STTEngine` ABC。Phase 1 は faster-whisper、Phase 2 で SenseVoice 追加予定
-- **LLM**: OpenAI互換API (Ollama `http://localhost:11434/v1`)。`config.yaml` でモデル変更可
+- **LLM**: OpenAI互換API (Ollama `http://localhost:11434/v1`)。`config.yaml` でモデル変更可。`llm.enabled: false` で無効化（STT出力をそのまま挿入）
 - **スレッド**: パイプラインは別スレッドで実行。排他制御で二重実行防止。shutdown時join
 - **設定**: `config.yaml` → Pydantic モデル。型安全 + バリデーション付き
