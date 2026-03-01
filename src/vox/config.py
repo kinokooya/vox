@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field
@@ -69,6 +70,7 @@ class AudioConfig(BaseModel):
 
 
 class InsertionConfig(BaseModel):
+    method: Literal["auto", "wm_paste", "ctrl_v"] = "auto"
     pre_paste_delay_ms: int = Field(default=50, ge=0)
     restore_clipboard: bool = True
 

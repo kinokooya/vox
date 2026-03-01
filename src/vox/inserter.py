@@ -1,10 +1,14 @@
-"""Text insertion via clipboard + WM_PASTE window message (Windows).
+"""Text insertion via clipboard + paste (Windows).
 
-Sets the clipboard to the desired text, then sends WM_PASTE directly
-to the focused control via SendMessage.  Unlike SendInput-based
-approaches (Ctrl+V keystrokes, KEYEVENTF_UNICODE), WM_PASTE is a
-window message that bypasses the keyboard input pipeline entirely,
-so the IME has no opportunity to intercept or duplicate the text.
+Supports two paste methods:
+- WM_PASTE: Window message sent directly to the focused control.
+  Works with native Win32 controls (Notepad, etc.) and bypasses the
+  keyboard pipeline so the IME cannot intercept the text.
+- Ctrl+V via SendInput: Simulated keyboard shortcut.  Works with
+  Chromium-based apps (Chrome, VSCode, Electron) that ignore WM_PASTE.
+
+The default "auto" mode detects Chromium windows by class name and
+picks the appropriate method automatically.
 """
 
 from __future__ import annotations
@@ -24,6 +28,11 @@ WM_PASTE = 0x0302
 CF_UNICODETEXT = 13
 GMEM_MOVEABLE = 0x0002
 
+INPUT_KEYBOARD = 1
+KEYEVENTF_KEYUP = 0x0002
+VK_CONTROL = 0x11
+VK_V = 0x56
+
 
 class _GUITHREADINFO(ctypes.Structure):
     """Win32 GUITHREADINFO — used to find the focused window handle."""
@@ -38,6 +47,40 @@ class _GUITHREADINFO(ctypes.Structure):
         ("hwndMoveSize", ctypes.wintypes.HWND),
         ("hwndCaret", ctypes.wintypes.HWND),
         ("rcCaret", ctypes.wintypes.RECT),
+    ]
+
+
+class _KEYBDINPUT(ctypes.Structure):
+    _fields_ = [
+        ("wVk", ctypes.wintypes.WORD),
+        ("wScan", ctypes.wintypes.WORD),
+        ("dwFlags", ctypes.wintypes.DWORD),
+        ("time", ctypes.wintypes.DWORD),
+        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+    ]
+
+
+class _MOUSEINPUT(ctypes.Structure):
+    """Needed in the INPUT union to ensure correct struct size (32 bytes on x64)."""
+
+    _fields_ = [
+        ("dx", ctypes.wintypes.LONG),
+        ("dy", ctypes.wintypes.LONG),
+        ("mouseData", ctypes.wintypes.DWORD),
+        ("dwFlags", ctypes.wintypes.DWORD),
+        ("time", ctypes.wintypes.DWORD),
+        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+    ]
+
+
+class _INPUT(ctypes.Structure):
+    class _INPUT_UNION(ctypes.Union):
+        _fields_ = [("mi", _MOUSEINPUT), ("ki", _KEYBDINPUT)]
+
+    _anonymous_ = ("_u",)
+    _fields_ = [
+        ("type", ctypes.wintypes.DWORD),
+        ("_u", _INPUT_UNION),
     ]
 
 
@@ -81,6 +124,24 @@ user32.SendMessageW.argtypes = [
 ]
 user32.SendMessageW.restype = ctypes.wintypes.LPARAM
 
+# Foreground window + class name
+user32.GetForegroundWindow.argtypes = []
+user32.GetForegroundWindow.restype = ctypes.wintypes.HWND
+user32.GetClassNameW.argtypes = [
+    ctypes.wintypes.HWND,
+    ctypes.wintypes.LPWSTR,
+    ctypes.c_int,
+]
+user32.GetClassNameW.restype = ctypes.c_int
+
+# SendInput
+user32.SendInput.argtypes = [
+    ctypes.wintypes.UINT,
+    ctypes.POINTER(_INPUT),
+    ctypes.c_int,
+]
+user32.SendInput.restype = ctypes.wintypes.UINT
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -94,6 +155,50 @@ def _get_focused_hwnd() -> int:
     if user32.GetGUIThreadInfo(0, ctypes.byref(gui)):
         return gui.hwndFocus or gui.hwndActive or 0
     return 0
+
+
+def _get_foreground_class_name() -> str:
+    """Return the class name of the foreground window (empty string on failure)."""
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd:
+        return ""
+    buf = ctypes.create_unicode_buffer(256)
+    length = user32.GetClassNameW(hwnd, buf, 256)
+    if length <= 0:
+        return ""
+    return buf.value
+
+
+def _is_chromium_window() -> bool:
+    """Detect whether the foreground window is a Chromium-based application."""
+    return _get_foreground_class_name().startswith("Chrome_WidgetWin")
+
+
+def _send_ctrl_v() -> None:
+    """Simulate Ctrl+V keystroke via SendInput (4 events sent atomically)."""
+    events = (_INPUT * 4)()
+
+    # Ctrl down
+    events[0].type = INPUT_KEYBOARD
+    events[0].ki.wVk = VK_CONTROL
+
+    # V down
+    events[1].type = INPUT_KEYBOARD
+    events[1].ki.wVk = VK_V
+
+    # V up
+    events[2].type = INPUT_KEYBOARD
+    events[2].ki.wVk = VK_V
+    events[2].ki.dwFlags = KEYEVENTF_KEYUP
+
+    # Ctrl up
+    events[3].type = INPUT_KEYBOARD
+    events[3].ki.wVk = VK_CONTROL
+    events[3].ki.dwFlags = KEYEVENTF_KEYUP
+
+    sent = user32.SendInput(4, events, ctypes.sizeof(_INPUT))
+    if sent != 4:
+        logger.warning("SendInput returned %d (expected 4)", sent)
 
 
 def _set_clipboard_text(text: str) -> None:
@@ -151,20 +256,19 @@ def _get_clipboard_text() -> str | None:
 
 
 class TextInserter:
-    """Inserts text into the active text field via clipboard + WM_PASTE."""
+    """Inserts text into the active text field via clipboard + paste."""
 
     def __init__(self, config: InsertionConfig) -> None:
         self._config = config
         self._saved_clipboard: str | None = None
 
     def insert(self, text: str) -> None:
-        """Insert *text* by setting the clipboard and sending WM_PASTE.
+        """Insert *text* by setting the clipboard and pasting.
 
-        WM_PASTE is a window message sent directly to the focused control.
-        It bypasses the keyboard input pipeline entirely, so the IME cannot
-        intercept or duplicate the text — unlike SendInput Ctrl+V or
-        KEYEVENTF_UNICODE which go through the low-level keyboard hook
-        chain where IME sits.
+        The paste method is determined by ``self._config.method``:
+        - ``"auto"``: Chromium windows get Ctrl+V, others get WM_PASTE.
+        - ``"wm_paste"``: Always use WM_PASTE (native Win32 controls).
+        - ``"ctrl_v"``: Always use SendInput Ctrl+V.
         """
         if not text:
             logger.warning("Empty text, skipping insertion")
@@ -185,19 +289,29 @@ class TextInserter:
         if self._config.pre_paste_delay_ms > 0:
             time.sleep(self._config.pre_paste_delay_ms / 1000)
 
-        # Find the focused control and send WM_PASTE
-        hwnd = _get_focused_hwnd()
-        if not hwnd:
-            logger.warning("No focused window found, cannot paste")
-            return
+        # Determine paste method
+        method = self._config.method
+        if method == "auto":
+            use_ctrl_v = _is_chromium_window()
+        elif method == "ctrl_v":
+            use_ctrl_v = True
+        else:
+            use_ctrl_v = False
 
-        user32.SendMessageW(hwnd, WM_PASTE, 0, 0)
-
-        logger.info(
-            "Text inserted via WM_PASTE to hwnd=%#x: %d chars",
-            hwnd,
-            len(text),
-        )
+        if use_ctrl_v:
+            _send_ctrl_v()
+            logger.info("Text inserted via Ctrl+V (SendInput): %d chars", len(text))
+        else:
+            hwnd = _get_focused_hwnd()
+            if not hwnd:
+                logger.warning("No focused window found, cannot paste")
+                return
+            user32.SendMessageW(hwnd, WM_PASTE, 0, 0)
+            logger.info(
+                "Text inserted via WM_PASTE to hwnd=%#x: %d chars",
+                hwnd,
+                len(text),
+            )
 
     def restore_clipboard_if_pending(self) -> None:
         """Restore the clipboard content that was saved before insertion."""
