@@ -46,7 +46,7 @@ class STTConfig(BaseModel):
 
 class LLMConfig(BaseModel):
     backend: str = "ollama"
-    model: str = "qwen3:14b"
+    model: str = "qwen3:8b"
     base_url: str = "http://localhost:11434/v1"
     temperature: float = Field(default=0.3, ge=0.0, le=2.0)
     max_tokens: int = Field(default=512, gt=0)

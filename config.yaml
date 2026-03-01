@@ -11,6 +11,8 @@ stt:
     グロードコード: "Claude Code"
     グロード コード: "Claude Code"
     グローバルコーディング: "Claude Code"
+    マイクティス: "マイクテスト"
+    バイクテスト: "マイクテスト"
   faster_whisper:
     model: "large-v3-turbo"
     device: "cuda"
@@ -36,7 +38,7 @@ stt:
 
 llm:
   backend: "ollama"
-  model: "qwen3:14b"
+  model: "qwen3:8b"
   base_url: "http://localhost:11434/v1"
   temperature: 0.3
   max_tokens: 512

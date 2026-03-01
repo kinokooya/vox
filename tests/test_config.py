@@ -11,7 +11,7 @@ from vox.config import AppConfig, AudioConfig, LLMConfig, load_config
 def test_default_config():
     config = AppConfig()
     assert config.stt.engine == "faster-whisper"
-    assert config.llm.model == "qwen3:14b"
+    assert config.llm.model == "qwen3:8b"
     assert config.hotkey.trigger_key == "alt_r"
     assert config.audio.sample_rate == 16000
     assert config.audio.max_duration_sec == 60
