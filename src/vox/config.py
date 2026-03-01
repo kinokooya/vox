@@ -73,12 +73,18 @@ class InsertionConfig(BaseModel):
     restore_clipboard: bool = True
 
 
+class MediaConfig(BaseModel):
+    enabled: bool = False
+    peak_threshold: float = Field(default=0.01, ge=0.0, le=1.0)
+
+
 class AppConfig(BaseModel):
     stt: STTConfig = STTConfig()
     llm: LLMConfig = LLMConfig()
     hotkey: HotkeyConfig = HotkeyConfig()
     audio: AudioConfig = AudioConfig()
     insertion: InsertionConfig = InsertionConfig()
+    media: MediaConfig = MediaConfig()
 
 
 def load_config(path: Path | None = None) -> AppConfig:

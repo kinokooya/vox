@@ -1,7 +1,7 @@
 # Vox 開発引き継ぎドキュメント
 
 > このファイルは WSL2 上の開発セッションから Windows 上の次セッションへの引き継ぎ用です。
-> **最終更新**: 2026-02-27 (Windows 実機テスト + ランタイム修正完了)
+> **最終更新**: 2026-03-01 (メディア自動一時停止機能追加)
 
 ---
 
@@ -16,6 +16,7 @@
 | 3 | Phase 1 MVP 全モジュール実装 | `be6609a` |
 | 4 | Codex によるコードレビュー → 指摘修正 (HIGH×3, MEDIUM×4, LOW×3) | `1e2cfe1` |
 | 5 | Windows 実機テスト + ランタイム修正 (alt_gr対応, CUDA DLL自動登録, 常時ストリーム, LLMタイムアウト) | `2667e6c` |
+| 6 | メディア自動一時停止: WASAPI ピーク検出 + VK_MEDIA_PLAY_PAUSE で録音中にメディア再生を自動停止・再開 | — |
 
 ### 未実施
 
@@ -43,6 +44,7 @@ vox/
 │   ├── hotkey.py                    # HotkeyListener: pynput右Alt Hold検出
 │   ├── inserter.py                  # TextInserter: clipboard + Win32 Ctrl+V
 │   ├── llm.py                       # LLMFormatter: OpenAI互換API呼び出し
+│   ├── media.py                     # MediaController: 録音中メディア自動一時停止
 │   ├── recorder.py                  # AudioRecorder: sounddevice録音
 │   └── stt/
 │       ├── __init__.py              # 公開API: STTEngine, create_stt_engine
@@ -62,8 +64,9 @@ vox/
 ### 処理パイプライン
 
 ```
-右Alt押下 → AudioRecorder.start()
+右Alt押下 → AudioRecorder.start() → MediaController.pause_if_playing()
 右Alt解放 → AudioRecorder.stop() → STTEngine.transcribe() → LLMFormatter.format_text() → TextInserter.insert()
+         → (finally) MediaController.resume_if_we_paused()
 ```
 
 - `VoxApp` (app.py) がオーケストレータ
@@ -188,3 +191,4 @@ Codex による自動レビューで以下を修正済み：
 | オーディオストリーム常時保持 | 毎回の作成・破棄による OS マイクインジケーターのラグを解消するため |
 | CUDA DLL パスを起動時に自動登録 | pip でインストールした nvidia パッケージの DLL を ctranslate2 が見つけられるようにするため |
 | LLM 30秒タイムアウト + 生テキストフォールバック | LLM が固まっても入力を失わないため |
+| WASAPI ピーク検出 + VK_MEDIA_PLAY_PAUSE | pycaw は「消音」で再生位置が進む。WinRT SMTC は重い。ピーク検出で「今音が出ているか」を判定し、トグルキーの誤動作を防止 |

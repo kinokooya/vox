@@ -11,6 +11,7 @@ from vox.config import AppConfig
 from vox.hotkey import HotkeyListener
 from vox.inserter import TextInserter
 from vox.llm import LLMFormatter
+from vox.media import MediaController
 from vox.recorder import AudioRecorder
 from vox.stt import create_stt_engine
 
@@ -26,6 +27,7 @@ class VoxApp:
         self._stt = create_stt_engine(config.stt)
         self._llm = LLMFormatter(config.llm)
         self._inserter = TextInserter(config.insertion)
+        self._media = MediaController(config.media)
         self._hotkey = HotkeyListener(
             config.hotkey,
             on_press=self._on_key_press,
@@ -107,6 +109,7 @@ class VoxApp:
             self._recording_active = True
         self._inserter.restore_clipboard_if_pending()
         self._recorder.start()
+        self._media.pause_if_playing()
 
     def _on_key_release(self) -> None:
         with self._lock:
@@ -194,6 +197,7 @@ class VoxApp:
         except Exception:
             logger.exception("[Pipeline] Error during processing")
         finally:
+            self._media.resume_if_we_paused()
             with self._lock:
                 self._processing = False
                 self._worker = None
