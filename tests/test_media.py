@@ -25,7 +25,7 @@ class TestMediaControllerDisabled:
 
 class TestMediaControllerPause:
     @patch("vox.media._send_media_play_pause")
-    @patch("vox.media._get_peak_value", return_value=0.5)
+    @patch.object(MediaController, "_get_peak", return_value=0.5)
     def test_high_peak_triggers_pause(self, mock_peak, mock_send):
         """When peak is above threshold, media key is sent and _did_pause is set."""
         ctrl = MediaController(MediaConfig(enabled=True, peak_threshold=0.01))
@@ -34,7 +34,7 @@ class TestMediaControllerPause:
         assert ctrl._did_pause is True  # noqa: SLF001
 
     @patch("vox.media._send_media_play_pause")
-    @patch("vox.media._get_peak_value", return_value=0.001)
+    @patch.object(MediaController, "_get_peak", return_value=0.001)
     def test_low_peak_skips_pause(self, mock_peak, mock_send):
         """When peak is below threshold, no media key is sent."""
         ctrl = MediaController(MediaConfig(enabled=True, peak_threshold=0.01))
@@ -63,7 +63,7 @@ class TestMediaControllerResume:
 
 
 class TestMediaControllerErrorSafety:
-    @patch("vox.media._get_peak_value", side_effect=OSError("COM error"))
+    @patch.object(MediaController, "_get_peak", side_effect=OSError("COM error"))
     def test_pause_failure_does_not_propagate(self, mock_peak):
         """Exceptions in pause_if_playing are caught and logged."""
         ctrl = MediaController(MediaConfig(enabled=True))

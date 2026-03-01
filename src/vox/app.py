@@ -94,6 +94,7 @@ class VoxApp:
             logger.info("Waiting for pipeline to finish...")
             worker.join(timeout=10)
         self._recorder.close()
+        self._media.close()
         logger.info("=== Vox stopped ===")
 
     _PIPELINE_COOLDOWN_SEC = 0.3
