@@ -11,6 +11,7 @@ from pathlib import Path
 
 from vox.app import VoxApp
 from vox.config import load_config
+from vox.tray import create_tray_icon
 
 
 def _register_cuda_dll_dirs() -> None:
@@ -124,27 +125,28 @@ def main() -> None:
     pid_file = _pid_path()
     pid_file.write_text(f"{os.getppid()}\n{os.getpid()}\n", encoding="utf-8")
 
-    def shutdown(signum: int, frame: object) -> None:
+    # Use a list so _cleanup can reference icon before it's assigned
+    icon_ref: list[object] = []
+
+    def _cleanup() -> None:
         app.stop()
         pid_file.unlink(missing_ok=True)
-        sys.exit(0)
+        if icon_ref:
+            icon_ref[0].stop()  # type: ignore[union-attr]
+
+    icon = create_tray_icon(on_quit=_cleanup)
+    icon_ref.append(icon)
+
+    def shutdown(signum: int, frame: object) -> None:
+        _cleanup()
 
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
 
     try:
         app.start()
-        # Keep the main thread alive (hotkey listener runs in daemon thread)
-        signal.pause()
-    except AttributeError:
-        # signal.pause() not available on Windows — use Event instead
-        import threading
-
-        stop_event = threading.Event()
-        try:
-            stop_event.wait()
-        except KeyboardInterrupt:
-            pass
+        # pystray.Icon.run() blocks the main thread (required by pystray on Windows)
+        icon.run()
     finally:
         app.stop()
         pid_file.unlink(missing_ok=True)
