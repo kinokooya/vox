@@ -38,6 +38,7 @@ stt:
     language: "auto"
 
 llm:
+  enabled: false
   backend: "ollama"
   model: "qwen3:8b"
   base_url: "http://localhost:11434/v1"

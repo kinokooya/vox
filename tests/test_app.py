@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from vox.config import AppConfig, STTConfig
+from vox.config import AppConfig, LLMConfig, STTConfig
 
 
 @patch("vox.app.TextInserter")
@@ -349,6 +349,88 @@ def test_pipeline_applies_word_replacements(
     # LLM should receive the replaced text
     mock_llm.format_text.assert_called_once_with("Claude Codeを使って開発しています")
     mock_inserter.insert.assert_called_once_with("Claude Codeを使って開発しています。")
+
+
+# --- LLM disabled tests ---
+
+
+@patch("vox.app.TextInserter")
+@patch("vox.app.LLMFormatter")
+@patch("vox.app.create_stt_engine")
+@patch("vox.app.AudioRecorder")
+@patch("vox.app.HotkeyListener")
+def test_pipeline_llm_disabled_inserts_raw_stt_text(
+    mock_hotkey_cls,
+    mock_recorder_cls,
+    mock_stt_factory,
+    mock_llm_cls,
+    mock_inserter_cls,
+):
+    """When llm.enabled=False, pipeline should skip LLM and insert raw STT text."""
+    from vox.app import VoxApp
+
+    config = AppConfig(llm=LLMConfig(enabled=False))
+
+    mock_stt = MagicMock()
+    mock_stt.transcribe.return_value = "えーとこれはテスト用の長い音声認識テキストです"
+    mock_stt_factory.return_value = mock_stt
+
+    mock_recorder = MagicMock()
+    mock_recorder.stop.return_value = np.ones(16000, dtype=np.float32)
+    mock_recorder_cls.return_value = mock_recorder
+
+    mock_llm = MagicMock()
+    mock_llm_cls.return_value = mock_llm
+
+    mock_inserter = MagicMock()
+    mock_inserter_cls.return_value = mock_inserter
+
+    app = VoxApp(config)
+    app._process_pipeline()
+
+    # LLM should NOT be called
+    mock_llm.format_text.assert_not_called()
+
+    # Inserter should receive the raw STT text
+    mock_inserter.insert.assert_called_once_with("えーとこれはテスト用の長い音声認識テキストです")
+
+
+@patch("vox.app.TextInserter")
+@patch("vox.app.LLMFormatter")
+@patch("vox.app.create_stt_engine")
+@patch("vox.app.AudioRecorder")
+@patch("vox.app.HotkeyListener")
+def test_start_llm_disabled_skips_warmup(
+    mock_hotkey_cls,
+    mock_recorder_cls,
+    mock_stt_factory,
+    mock_llm_cls,
+    mock_inserter_cls,
+):
+    """When llm.enabled=False, start() should skip LLM warmup."""
+    from vox.app import VoxApp
+
+    config = AppConfig(llm=LLMConfig(enabled=False))
+
+    mock_stt = MagicMock()
+    mock_stt_factory.return_value = mock_stt
+
+    mock_llm = MagicMock()
+    mock_llm_cls.return_value = mock_llm
+
+    mock_recorder = MagicMock()
+    mock_recorder_cls.return_value = mock_recorder
+
+    mock_hotkey = MagicMock()
+    mock_hotkey_cls.return_value = mock_hotkey
+
+    app = VoxApp(config)
+    app.start()
+
+    mock_stt.load_model.assert_called_once()
+    mock_llm.warmup.assert_not_called()
+    mock_recorder.open.assert_called_once()
+    mock_hotkey.start.assert_called_once()
 
 
 # --- Duplicate insertion prevention tests ---

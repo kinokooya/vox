@@ -15,6 +15,7 @@ def test_default_config():
     assert config.hotkey.trigger_key == "alt_r"
     assert config.audio.sample_rate == 16000
     assert config.audio.max_duration_sec == 60
+    assert config.llm.enabled is True
     assert config.insertion.restore_clipboard is True
 
 

@@ -44,14 +44,18 @@ class VoxApp:
         logger.info("LLM model: %s", self._config.llm.model)
 
         t0 = time.monotonic()
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            stt_future = pool.submit(self._load_stt)
-            llm_future = pool.submit(self._warmup_llm)
+        if self._config.llm.enabled:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                stt_future = pool.submit(self._load_stt)
+                llm_future = pool.submit(self._warmup_llm)
 
-            # STT is required — propagate failure
-            stt_future.result()
-            # LLM warmup is best-effort — already logged inside _warmup_llm
-            llm_future.result()
+                # STT is required — propagate failure
+                stt_future.result()
+                # LLM warmup is best-effort — already logged inside _warmup_llm
+                llm_future.result()
+        else:
+            logger.info("LLM disabled, skipping warmup")
+            self._load_stt()
 
         elapsed = time.monotonic() - t0
         logger.info("Model loading completed in %.1fs", elapsed)
@@ -164,8 +168,11 @@ class VoxApp:
             raw_text = self._apply_word_replacements(raw_text)
             logger.info("[Pipeline] STT result: %s", raw_text)
 
-            # 3. LLM formatting (skip for short text, fallback to raw on failure)
-            if self._should_skip_llm(raw_text):
+            # 3. LLM formatting (skip if disabled, skip for short text, fallback to raw on failure)
+            if not self._config.llm.enabled:
+                logger.info("[Pipeline] LLM disabled, using raw STT text")
+                formatted_text = raw_text
+            elif self._should_skip_llm(raw_text):
                 logger.info("[Pipeline] Short text, skipping LLM: %s", raw_text)
                 formatted_text = raw_text
             else:
