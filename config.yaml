@@ -11,6 +11,7 @@ stt:
     グロードコード: "Claude Code"
     グロード コード: "Claude Code"
     グローバルコーディング: "Claude Code"
+    クロード構造: "Claude Code"
     マイクティス: "マイクテスト"
     バイクテスト: "マイクテスト"
   faster_whisper:

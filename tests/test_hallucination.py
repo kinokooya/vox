@@ -34,6 +34,10 @@ class TestValidateTranscription:
         # Same phrase repeated 3+ times
         assert engine._validate_transcription("あいうあいうあいう", 3.0) == ""
 
+    def test_onegai_shimasu_not_false_positive(self, engine: FasterWhisperEngine):
+        text = "しっかりと頑張るのでよろしくお願いします。"
+        assert engine._validate_transcription(text, 5.0) == text
+
     def test_no_false_positive_on_short_repeat(self, engine: FasterWhisperEngine):
         # Only 2 repetitions should pass
         assert engine._validate_transcription("はいはい", 1.0) == "はいはい"

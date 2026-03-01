@@ -20,7 +20,6 @@ _HALLUCINATION_PATTERNS: list[re.Pattern[str]] = [
         r"ご視聴ありがとうございました",
         r"チャンネル登録",
         r"高評価",
-        r"お願いします。$",
         r"ご清聴ありがとうございました",
         r"字幕",
         r"次の動画",
