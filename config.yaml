@@ -64,5 +64,5 @@ insertion:
 # Auto-pause media playback during voice recording.
 # Uses WASAPI peak detection — only pauses if audio is actually playing.
 media:
-  enabled: false
+  enabled: true
   peak_threshold: 0.01  # 0.0–1.0, audio output level to consider "playing"
