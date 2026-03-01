@@ -23,14 +23,32 @@ def _register_cuda_dll_dirs() -> None:
             os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
 
 
-def main() -> None:
-    _register_cuda_dll_dirs()
+def _setup_logging() -> None:
+    """Configure logging. Use file output when stderr is unavailable (pythonw.exe)."""
+    log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    date_format = "%H:%M:%S"
+
+    handlers: list[logging.Handler] = []
+
+    if sys.stderr is not None:
+        handlers.append(logging.StreamHandler())
+
+    # Always write to log file for debugging
+    log_path = Path(__file__).resolve().parent.parent.parent / "vox.log"
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    handlers.append(file_handler)
 
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
+        format=log_format,
+        datefmt=date_format,
+        handlers=handlers,
     )
+
+
+def main() -> None:
+    _register_cuda_dll_dirs()
+    _setup_logging()
 
     config_path = Path("config.yaml")
     if len(sys.argv) > 1:

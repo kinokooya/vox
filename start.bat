@@ -1,4 +1,3 @@
 @echo off
 cd /d "%~dp0"
-.venv\Scripts\python.exe -m vox %*
-pause
+start "" /B .venv\Scripts\pythonw.exe -m vox %*
