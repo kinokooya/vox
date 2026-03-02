@@ -39,6 +39,10 @@ models/
 *.mp3
 *.flac
 
+# Benchmark data (audio recordings and results)
+benchmarks/audio/
+benchmarks/results/
+
 # Environment
 .env
 .env.local
