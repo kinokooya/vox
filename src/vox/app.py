@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -38,6 +39,9 @@ class VoxApp:
         self._last_pipeline_end = 0.0
         self._lock = threading.Lock()
         self._worker: threading.Thread | None = None
+        self._compiled_replacements = self._compile_replacements(
+            config.stt.word_replacements
+        )
 
     def start(self) -> None:
         """Initialize models and start listening."""
@@ -138,10 +142,30 @@ class VoxApp:
             return False
         return not any(f in text for f in self._FILLERS)
 
+    @staticmethod
+    def _compile_replacements(
+        replacements: dict[str, str],
+    ) -> list[tuple[re.Pattern[str] | str, str]]:
+        """Pre-compile regex patterns in word_replacements.
+
+        Keys wrapped in /pattern/ are compiled as regex; others are plain strings.
+        """
+        compiled: list[tuple[re.Pattern[str] | str, str]] = []
+        for old, new in replacements.items():
+            if old.startswith("/") and old.endswith("/") and len(old) > 2:
+                pattern = old[1:-1]
+                compiled.append((re.compile(pattern), new))
+            else:
+                compiled.append((old, new))
+        return compiled
+
     def _apply_word_replacements(self, text: str) -> str:
-        """Apply word replacements from config (e.g. katakana → Latin)."""
-        for old, new in self._config.stt.word_replacements.items():
-            text = text.replace(old, new)
+        """Apply word replacements from config (plain string and regex)."""
+        for pattern, replacement in self._compiled_replacements:
+            if isinstance(pattern, re.Pattern):
+                text = pattern.sub(replacement, text)
+            else:
+                text = text.replace(pattern, replacement)
         return text
 
     def _process_pipeline(self) -> None:

@@ -1,6 +1,7 @@
 stt:
   engine: "faster-whisper"  # or "sensevoice"
   word_replacements:
+    # --- Claude / AI products ---
     クロードコード: "Claude Code"
     クロートコード: "Claude Code"
     クロード コード: "Claude Code"
@@ -12,8 +13,50 @@ stt:
     グロード コード: "Claude Code"
     グローバルコーディング: "Claude Code"
     クロード構造: "Claude Code"
-    マイクティス: "マイクテスト"
-    バイクテスト: "マイクテスト"
+    CLAUDE Code: "Claude Code"
+    チャットジーピーティー: "ChatGPT"
+    ジェミニ: "Gemini"
+    コパイロット: "Copilot"
+    コーパイロット: "Copilot"
+    # --- Regex: CLAUDE.md variants ---
+    # Matches クロードエムディー, クロードえむでぃ, etc.
+    /クロード(?:エ|え)(?:ム|む)(?:ディ|でぃ)ー?/: "CLAUDE.md"
+    # --- Git / GitHub ---
+    ギット: "git"
+    ギットハブ: "GitHub"
+    /GitHub\s*アクション(?:ズ|ス)?/: "GitHub Actions"
+    プルリクエスト: "Pull Request"
+    プルリク: "Pull Request"
+    マージ: "マージ"
+    コミット: "コミット"
+    # --- Config files ---
+    コンフィグヤムル: "config.yaml"
+    コンフィグ ヤムル: "config.yaml"
+    /[Pp]yproject\s*[Tt]om(?:ul|l|ル)/: "pyproject.toml"
+    /ハンドオフ\s*(?:MD|md|エムディー)/: "handoff.md"
+    Dockerファイル: "Dockerfile"
+    Docker ファイル: "Dockerfile"
+    # --- Languages / frameworks ---
+    タイプスクリプト: "TypeScript"
+    ジャバスクリプト: "JavaScript"
+    パイソン: "Python"
+    リアクト: "React"
+    ネクストジェイエス: "Next.js"
+    ネクスト ジェイエス: "Next.js"
+    # --- DevOps ---
+    ドッカー: "Docker"
+    クーバネティス: "Kubernetes"
+    クーバーネティス: "Kubernetes"
+    クバネティス: "Kubernetes"
+    # --- Tools ---
+    エヌピーエム: "npm"
+    オーラマ: "Ollama"
+    オラマ: "Ollama"
+    /[Pp]y[Tt]est/: "pytest"
+    /ADtest/: "pytest"
+    フィーチャー: "feature"
+    /マニー?フェスト/: "マニフェスト"
+    /ビーム\s*サイズ/: "beam size"
   faster_whisper:
     model: "large-v3-turbo"
     device: "cuda"
@@ -25,8 +68,16 @@ stt:
     log_prob_threshold: -0.5
     compression_ratio_threshold: 2.0
     hallucination_silence_threshold: 2.0
-    initial_prompt: "Claude Code、GitHub、TypeScript、Python、Docker、Kubernetes、npm、Vox。プログラミングに関する音声入力。"
-    hotwords: "Claude Code, GitHub, TypeScript, Python, Docker, Kubernetes, npm, Vox"
+    initial_prompt: >-
+      Claude Code、CLAUDE.md、config.yaml、GitHub、Pull Request、
+      TypeScript、JavaScript、Python、Docker、Kubernetes、
+      npm、React、Next.js、Vox。
+      プログラミングと開発ツールに関する音声入力です。
+      リファクタリング、デプロイ、コミット、ブランチ、マージ。
+    hotwords: >-
+      Claude Code, CLAUDE.md, config.yaml, GitHub, Pull Request,
+      TypeScript, JavaScript, Python, Docker, Kubernetes,
+      npm, React, Next.js, Vox, git, Copilot, ChatGPT, Gemini
     repetition_penalty: 1.1
     patience: 2.0
     vad:

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from vox.config import AppConfig, AudioConfig, LLMConfig, load_config
+from vox.config import AppConfig, AudioConfig, InsertionConfig, LLMConfig, load_config
 
 
 def test_default_config():
@@ -91,3 +91,28 @@ def test_invalid_audio_config():
 def test_invalid_llm_temperature():
     with pytest.raises(Exception):
         LLMConfig(temperature=5.0)
+
+
+# ---------------------------------------------------------------------------
+# InsertionConfig — method field
+# ---------------------------------------------------------------------------
+
+
+def test_insertion_method_default_auto():
+    config = InsertionConfig()
+    assert config.method == "auto"
+
+
+def test_insertion_method_from_yaml(tmp_path: Path):
+    data = {"insertion": {"method": "ctrl_v"}}
+    path = tmp_path / "config.yaml"
+    with open(path, "w") as f:
+        yaml.dump(data, f)
+
+    config = load_config(path)
+    assert config.insertion.method == "ctrl_v"
+
+
+def test_insertion_method_invalid():
+    with pytest.raises(Exception):
+        InsertionConfig(method="invalid_method")

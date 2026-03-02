@@ -39,6 +39,10 @@ models/
 *.mp3
 *.flac
 
+# Benchmark data (audio recordings and results)
+benchmarks/audio/
+benchmarks/results/
+
 # Environment
 .env
 .env.local
@@ -51,6 +55,7 @@ models/
 
 # Docs (non-tracked)
 docs/workflow-improvements.md
+docs/*.html
 
 # Testing / linting caches
 .pytest_cache/

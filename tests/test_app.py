@@ -519,3 +519,99 @@ def test_key_press_during_cooldown_is_ignored(
     # recorder.start() should NOT have been called
     mock_recorder.start.assert_not_called()
     assert app._recording_active is False
+
+
+# --- Regex word replacement tests ---
+
+
+@patch("vox.app.TextInserter")
+@patch("vox.app.LLMFormatter")
+@patch("vox.app.create_stt_engine")
+@patch("vox.app.AudioRecorder")
+@patch("vox.app.HotkeyListener")
+def test_regex_word_replacement(
+    mock_hotkey_cls,
+    mock_recorder_cls,
+    mock_stt_factory,
+    mock_llm_cls,
+    mock_inserter_cls,
+):
+    """Regex patterns (wrapped in /.../) should be applied via re.sub."""
+    from vox.app import VoxApp
+
+    config = AppConfig(
+        stt=STTConfig(
+            word_replacements={
+                "/クロード(?:エ|え)(?:ム|む)(?:ディ|でぃ)ー?/": "CLAUDE.md",
+                "ギットハブ": "GitHub",
+            }
+        )
+    )
+    mock_stt_factory.return_value = MagicMock()
+    mock_llm_cls.return_value = MagicMock()
+    mock_inserter_cls.return_value = MagicMock()
+
+    app = VoxApp(config)
+    assert app._apply_word_replacements("クロードエムディーを確認") == "CLAUDE.mdを確認"
+    assert app._apply_word_replacements("クロードえむでぃを確認") == "CLAUDE.mdを確認"
+    assert app._apply_word_replacements("ギットハブにプッシュ") == "GitHubにプッシュ"
+
+
+@patch("vox.app.TextInserter")
+@patch("vox.app.LLMFormatter")
+@patch("vox.app.create_stt_engine")
+@patch("vox.app.AudioRecorder")
+@patch("vox.app.HotkeyListener")
+def test_regex_and_plain_replacements_coexist(
+    mock_hotkey_cls,
+    mock_recorder_cls,
+    mock_stt_factory,
+    mock_llm_cls,
+    mock_inserter_cls,
+):
+    """Both regex and plain-string replacements should work in the same config."""
+    from vox.app import VoxApp
+
+    config = AppConfig(
+        stt=STTConfig(
+            word_replacements={
+                "/タイプ\\s*スクリプト/": "TypeScript",
+                "クロードコード": "Claude Code",
+            }
+        )
+    )
+    mock_stt_factory.return_value = MagicMock()
+    mock_llm_cls.return_value = MagicMock()
+    mock_inserter_cls.return_value = MagicMock()
+
+    app = VoxApp(config)
+    result = app._apply_word_replacements("クロードコードでタイプ スクリプトを書く")
+    assert result == "Claude CodeでTypeScriptを書く"
+
+
+@patch("vox.app.TextInserter")
+@patch("vox.app.LLMFormatter")
+@patch("vox.app.create_stt_engine")
+@patch("vox.app.AudioRecorder")
+@patch("vox.app.HotkeyListener")
+def test_regex_replacement_no_match(
+    mock_hotkey_cls,
+    mock_recorder_cls,
+    mock_stt_factory,
+    mock_llm_cls,
+    mock_inserter_cls,
+):
+    """Regex that doesn't match should leave text unchanged."""
+    from vox.app import VoxApp
+
+    config = AppConfig(
+        stt=STTConfig(
+            word_replacements={"/クロード(?:エ|え)(?:ム|む)(?:ディ|でぃ)/": "CLAUDE.md"}
+        )
+    )
+    mock_stt_factory.return_value = MagicMock()
+    mock_llm_cls.return_value = MagicMock()
+    mock_inserter_cls.return_value = MagicMock()
+
+    app = VoxApp(config)
+    assert app._apply_word_replacements("テスト文章です") == "テスト文章です"

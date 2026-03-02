@@ -54,7 +54,7 @@ vox/
 ├── start.bat                       # Windows ショートカット用起動スクリプト
 ├── start.sh                        # bash 用起動スクリプト
 ├── stop.bat                        # プロセス終了スクリプト (PIDファイル経由)
-└── tests/                          # テスト (114件)
+└── tests/                          # テスト (134件)
     ├── test_app.py                  # パイプライン統合テスト
     ├── test_config.py               # 設定テスト
     ├── test_hallucination.py        # ハルシネーション検出テスト
