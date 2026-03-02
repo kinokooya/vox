@@ -12,8 +12,12 @@ stt:
     グロード コード: "Claude Code"
     グローバルコーディング: "Claude Code"
     クロード構造: "Claude Code"
-    マイクティス: "マイクテスト"
-    バイクテスト: "マイクテスト"
+    チャットジーピーティー: "ChatGpt"
+    ジェミニ: "Gemini"
+
+    
+    ギット: "git"
+    ギットハブ: "GitHub"
   faster_whisper:
     model: "large-v3-turbo"
     device: "cuda"

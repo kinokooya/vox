@@ -51,6 +51,7 @@ models/
 
 # Docs (non-tracked)
 docs/workflow-improvements.md
+docs/*.html
 
 # Testing / linting caches
 .pytest_cache/
