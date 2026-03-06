@@ -1,4 +1,4 @@
-"""Main application orchestrator — ties all components together."""
+"""Main application orchestrator - ties all components together."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from vox.config import AppConfig
 from vox.hotkey import HotkeyListener
 from vox.inserter import TextInserter
 from vox.llm import LLMFormatter
+from vox.pipeline import PipelineRunner
 from vox.recorder import AudioRecorder
 from vox.stt import create_stt_engine
 
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class VoxApp:
-    """Main application: hotkey → record → STT → LLM → insert."""
+    """Main application: hotkey -> record -> STT -> LLM -> insert."""
 
     def __init__(self, config: AppConfig) -> None:
         self._config = config
@@ -24,6 +25,13 @@ class VoxApp:
         self._stt = create_stt_engine(config.stt)
         self._llm = LLMFormatter(config.llm)
         self._inserter = TextInserter(config.insertion)
+        self._pipeline = PipelineRunner(
+            recorder=self._recorder,
+            stt=self._stt,
+            llm=self._llm,
+            inserter=self._inserter,
+            sample_rate=config.audio.sample_rate,
+        )
         self._hotkey = HotkeyListener(
             config.hotkey,
             on_press=self._on_key_press,
@@ -46,7 +54,7 @@ class VoxApp:
 
         self._hotkey.start()
         trigger = self._config.hotkey.trigger_key
-        logger.info("=== Vox ready — press and hold %s to speak ===", trigger)
+        logger.info("=== Vox ready - press and hold %s to speak ===", trigger)
 
     def stop(self) -> None:
         """Stop the application, waiting for any in-flight work."""
@@ -71,41 +79,15 @@ class VoxApp:
             self._processing = True
         self._hotkey.set_enabled(False)
 
-        thread = threading.Thread(target=self._process_pipeline)
+        thread = threading.Thread(target=self._process_pipeline, name="vox-pipeline")
         with self._lock:
             self._worker = thread
         thread.start()
 
     def _process_pipeline(self) -> None:
-        """Execute the full pipeline: record stop → STT → LLM → insert."""
+        """Execute one pipeline run in a worker thread."""
         try:
-            # 1. Stop recording and get audio
-            audio = self._recorder.stop()
-            if len(audio) == 0:
-                logger.warning("No audio captured, skipping pipeline")
-                return
-
-            duration = len(audio) / self._config.audio.sample_rate
-            logger.info("[Pipeline] Audio: %.1fs, %d samples", duration, len(audio))
-
-            # 2. STT
-            logger.info("[Pipeline] Running STT...")
-            raw_text = self._stt.transcribe(audio, self._config.audio.sample_rate)
-            if not raw_text.strip():
-                logger.info("[Pipeline] STT returned empty text, skipping")
-                return
-            logger.info("[Pipeline] STT result: %s", raw_text)
-
-            # 3. LLM formatting
-            logger.info("[Pipeline] Running LLM formatting...")
-            formatted_text = self._llm.format_text(raw_text)
-            logger.info("[Pipeline] LLM result: %s", formatted_text)
-
-            # 4. Text insertion
-            logger.info("[Pipeline] Inserting text...")
-            self._inserter.insert(formatted_text)
-            logger.info("[Pipeline] Done!")
-
+            self._pipeline.run_once()
         except Exception:
             logger.exception("[Pipeline] Error during processing")
         finally:

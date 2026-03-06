@@ -53,3 +53,12 @@ def test_invalid_audio_config():
 def test_invalid_llm_temperature():
     with pytest.raises(Exception):
         LLMConfig(temperature=5.0)
+
+
+def test_load_config_invalid_root_raises(tmp_path: Path):
+    path = tmp_path / "config.yaml"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("- invalid\n- root\n")
+
+    with pytest.raises(ValueError, match="YAML mapping"):
+        load_config(path)

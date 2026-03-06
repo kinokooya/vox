@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field
@@ -18,7 +19,7 @@ class FasterWhisperConfig(BaseModel):
     device: str = "cuda"
     compute_type: str = "float16"
     language: str = "ja"
-    vad: VADConfig = VADConfig()
+    vad: VADConfig = Field(default_factory=VADConfig)
 
 
 class SenseVoiceConfig(BaseModel):
@@ -29,8 +30,8 @@ class SenseVoiceConfig(BaseModel):
 
 class STTConfig(BaseModel):
     engine: str = "faster-whisper"
-    faster_whisper: FasterWhisperConfig = FasterWhisperConfig()
-    sensevoice: SenseVoiceConfig = SenseVoiceConfig()
+    faster_whisper: FasterWhisperConfig = Field(default_factory=FasterWhisperConfig)
+    sensevoice: SenseVoiceConfig = Field(default_factory=SenseVoiceConfig)
 
 
 class LLMConfig(BaseModel):
@@ -57,19 +58,29 @@ class InsertionConfig(BaseModel):
 
 
 class AppConfig(BaseModel):
-    stt: STTConfig = STTConfig()
-    llm: LLMConfig = LLMConfig()
-    hotkey: HotkeyConfig = HotkeyConfig()
-    audio: AudioConfig = AudioConfig()
-    insertion: InsertionConfig = InsertionConfig()
+    stt: STTConfig = Field(default_factory=STTConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
+    hotkey: HotkeyConfig = Field(default_factory=HotkeyConfig)
+    audio: AudioConfig = Field(default_factory=AudioConfig)
+    insertion: InsertionConfig = Field(default_factory=InsertionConfig)
 
 
 def load_config(path: Path | None = None) -> AppConfig:
     """Load configuration from YAML file. Falls back to defaults if file not found."""
     if path is None:
         path = Path("config.yaml")
-    if path.exists():
-        with open(path, encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-        return AppConfig(**data)
-    return AppConfig()
+
+    if not path.exists():
+        return AppConfig()
+
+    with path.open(encoding="utf-8") as f:
+        loaded = yaml.safe_load(f)
+
+    if loaded is None:
+        data: dict[str, Any] = {}
+    elif isinstance(loaded, dict):
+        data = loaded
+    else:
+        raise ValueError("Config file must contain a YAML mapping at the root")
+
+    return AppConfig(**data)
