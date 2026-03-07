@@ -1,4 +1,4 @@
-"""Configuration management using Pydantic + YAML."""
+﻿"""Configuration management using Pydantic + YAML."""
 
 from __future__ import annotations
 
@@ -40,6 +40,9 @@ class LLMConfig(BaseModel):
     base_url: str = "http://localhost:11434/v1"
     temperature: float = Field(default=0.3, ge=0.0, le=2.0)
     max_tokens: int = Field(default=1024, gt=0)
+    request_timeout_sec: float = Field(default=20.0, gt=0)
+    retry_count: int = Field(default=2, ge=0, le=10)
+    retry_backoff_sec: float = Field(default=0.3, ge=0.0)
 
 
 class HotkeyConfig(BaseModel):

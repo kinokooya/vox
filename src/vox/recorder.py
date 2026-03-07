@@ -4,24 +4,47 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
-import sounddevice as sd
 
 from vox.config import AudioConfig
 
 logger = logging.getLogger(__name__)
 
+StreamFactory = Callable[[int, int, Callable[..., None]], Any]
+
+
+def _default_stream_factory(
+    sample_rate: int,
+    channels: int,
+    callback: Callable[..., None],
+) -> Any:
+    import sounddevice as sd
+
+    return sd.InputStream(
+        samplerate=sample_rate,
+        channels=channels,
+        dtype="float32",
+        callback=callback,
+    )
+
 
 class AudioRecorder:
     """Records audio from the microphone while triggered."""
 
-    def __init__(self, config: AudioConfig) -> None:
+    def __init__(
+        self,
+        config: AudioConfig,
+        stream_factory: StreamFactory | None = None,
+    ) -> None:
         self._config = config
         self._frames: list[np.ndarray] = []
         self._frame_count = 0
         self._is_recording = False
-        self._stream: sd.InputStream | None = None
+        self._stream: Any | None = None
+        self._stream_factory = stream_factory or _default_stream_factory
         self._lock = threading.Lock()
         self._max_frames = config.sample_rate * config.max_duration_sec
 
@@ -36,12 +59,7 @@ class AudioRecorder:
         rate = self._config.sample_rate
         max_dur = self._config.max_duration_sec
         try:
-            stream = sd.InputStream(
-                samplerate=rate,
-                channels=self._config.channels,
-                dtype="float32",
-                callback=self._audio_callback,
-            )
+            stream = self._stream_factory(rate, self._config.channels, self._audio_callback)
             stream.start()
         except Exception:
             logger.exception("Failed to start audio stream")
@@ -84,8 +102,9 @@ class AudioRecorder:
         indata: np.ndarray,
         frames: int,
         time_info: object,
-        status: sd.CallbackFlags,
+        status: object,
     ) -> None:
+        del frames, time_info
         if status:
             logger.warning("Audio callback status: %s", status)
         with self._lock:
