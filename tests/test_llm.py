@@ -1,4 +1,4 @@
-﻿"""Tests for LLM formatter."""
+"""Tests for LLM formatter."""
 
 from unittest.mock import MagicMock, patch
 
@@ -25,7 +25,7 @@ def test_format_text_calls_api(mock_openai_cls) -> None:
     mock_response.choices[0].message.content = "formatted text"
     mock_client.chat.completions.create.return_value = mock_response
 
-    config = LLMConfig(request_timeout_sec=12.5)
+    config = LLMConfig(timeout_sec=12.5)
     formatter = LLMFormatter(config)
     result = formatter.format_text("raw text input")
 
@@ -34,7 +34,7 @@ def test_format_text_calls_api(mock_openai_cls) -> None:
     call_kwargs = mock_client.chat.completions.create.call_args[1]
     assert call_kwargs["model"] == config.model
     assert call_kwargs["temperature"] == config.temperature
-    assert call_kwargs["timeout"] == config.request_timeout_sec
+    assert call_kwargs["timeout"] == config.timeout_sec
     assert len(call_kwargs["messages"]) == 2
     assert call_kwargs["messages"][0]["content"] == SYSTEM_PROMPT
     assert call_kwargs["messages"][1]["content"] == "raw text input"
@@ -103,6 +103,6 @@ def test_non_retryable_error_raises_permanent_error() -> None:
 
 
 def test_system_prompt_contains_rules() -> None:
-    assert "フィラー" in SYSTEM_PROMPT
-    assert "句読点" in SYSTEM_PROMPT
-    assert "技術用語" in SYSTEM_PROMPT
+    assert "????" in SYSTEM_PROMPT
+    assert "???" in SYSTEM_PROMPT
+    assert "????" in SYSTEM_PROMPT

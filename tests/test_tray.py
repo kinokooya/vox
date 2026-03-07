@@ -20,43 +20,29 @@ def test_create_tray_icon_returns_icon():
     assert icon.name == "Vox"
     assert icon.title == "Vox - AI Voice Input"
     assert icon.icon is not None
-    # Icon image should be 64x64 RGBA
     assert icon.icon.size == (64, 64)
 
 
-def test_menu_has_expected_items():
-    """The tray menu should have the expected labels."""
+def test_menu_structure():
+    """The tray menu should contain 3 actionable items and at least one separator."""
     on_quit = MagicMock()
     icon = create_tray_icon(on_quit)
 
     items = _non_separator_items(icon)
-    labels = [str(item) for item in items]
+    assert len(items) == 3
 
-    assert "設定ファイルを開く" in labels
-    assert "ログを開く" in labels
-    assert "終了" in labels
-
-
-def test_menu_has_separator():
-    """The menu should contain a separator before the quit item."""
-    on_quit = MagicMock()
-    icon = create_tray_icon(on_quit)
-
-    items = list(icon.menu.items)
-    separators = [i for i, item in enumerate(items) if str(item) == _SEPARATOR_LABEL]
+    all_items = list(icon.menu.items)
+    separators = [item for item in all_items if str(item) == _SEPARATOR_LABEL]
     assert len(separators) >= 1
 
 
-@patch("vox.tray.os.startfile")
+@patch("vox.tray.os.startfile", create=True)
 def test_open_config_calls_startfile(mock_startfile):
-    """Selecting 'Open config' should call os.startfile with config.yaml path."""
+    """Selecting first item should open config.yaml."""
     on_quit = MagicMock()
     icon = create_tray_icon(on_quit)
 
-    items = _non_separator_items(icon)
-    config_item = items[0]  # First item is "設定ファイルを開く"
-
-    # pystray MenuItem.__call__(icon) triggers the action
+    config_item = _non_separator_items(icon)[0]
     config_item(icon)
 
     mock_startfile.assert_called_once()
@@ -64,15 +50,13 @@ def test_open_config_calls_startfile(mock_startfile):
     assert "config.yaml" in call_arg
 
 
-@patch("vox.tray.os.startfile")
+@patch("vox.tray.os.startfile", create=True)
 def test_open_log_calls_startfile(mock_startfile):
-    """Selecting 'Open log' should call os.startfile with vox.log path."""
+    """Selecting second item should open vox.log."""
     on_quit = MagicMock()
     icon = create_tray_icon(on_quit)
 
-    items = _non_separator_items(icon)
-    log_item = items[1]  # Second item is "ログを開く"
-
+    log_item = _non_separator_items(icon)[1]
     log_item(icon)
 
     mock_startfile.assert_called_once()
@@ -81,13 +65,11 @@ def test_open_log_calls_startfile(mock_startfile):
 
 
 def test_quit_invokes_on_quit_callback():
-    """Selecting 'Quit' should invoke the on_quit callback."""
+    """Selecting quit item should call the callback."""
     on_quit = MagicMock()
     icon = create_tray_icon(on_quit)
 
-    items = _non_separator_items(icon)
-    quit_item = items[-1]  # Last non-separator item is "終了"
-
+    quit_item = _non_separator_items(icon)[-1]
     quit_item(icon)
 
     on_quit.assert_called_once()

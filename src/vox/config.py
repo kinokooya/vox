@@ -1,4 +1,4 @@
-﻿"""Configuration management using Pydantic + YAML."""
+"""Configuration management using Pydantic + YAML."""
 
 from __future__ import annotations
 
@@ -35,12 +35,13 @@ class STTConfig(BaseModel):
 
 
 class LLMConfig(BaseModel):
+    enabled: bool = True
     backend: str = "ollama"
     model: str = "qwen2.5:7b-instruct-q4_K_M"
     base_url: str = "http://localhost:11434/v1"
     temperature: float = Field(default=0.3, ge=0.0, le=2.0)
     max_tokens: int = Field(default=1024, gt=0)
-    request_timeout_sec: float = Field(default=20.0, gt=0)
+    timeout_sec: float = Field(default=20.0, gt=0)
     retry_count: int = Field(default=2, ge=0, le=10)
     retry_backoff_sec: float = Field(default=0.3, ge=0.0)
 
@@ -60,12 +61,18 @@ class InsertionConfig(BaseModel):
     restore_clipboard: bool = True
 
 
+class MediaConfig(BaseModel):
+    enabled: bool = False
+    peak_threshold: float = Field(default=0.01, ge=0.0, le=1.0)
+
+
 class AppConfig(BaseModel):
     stt: STTConfig = Field(default_factory=STTConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     hotkey: HotkeyConfig = Field(default_factory=HotkeyConfig)
     audio: AudioConfig = Field(default_factory=AudioConfig)
     insertion: InsertionConfig = Field(default_factory=InsertionConfig)
+    media: MediaConfig = Field(default_factory=MediaConfig)
 
 
 def load_config(path: Path | None = None) -> AppConfig:

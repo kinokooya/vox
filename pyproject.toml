@@ -16,6 +16,8 @@ dependencies = [
     "pyperclip>=1.8",
     "pydantic>=2.0",
     "pyyaml>=6.0",
+    "pystray>=0.19",
+    "Pillow>=9.0",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +26,9 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.10",
     "types-PyYAML>=6.0",
+    "jiwer>=3.0",
+    "soundfile>=0.12",
+    "scipy>=1.10",
 ]
 
 [project.scripts]
