@@ -4,84 +4,95 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
-import sounddevice as sd
 
 from vox.config import AudioConfig
 
 logger = logging.getLogger(__name__)
 
+StreamFactory = Callable[[int, int, Callable[..., None]], Any]
+
+
+def _default_stream_factory(
+    sample_rate: int,
+    channels: int,
+    callback: Callable[..., None],
+) -> Any:
+    import sounddevice as sd
+
+    return sd.InputStream(
+        samplerate=sample_rate,
+        channels=channels,
+        dtype="float32",
+        callback=callback,
+    )
+
 
 class AudioRecorder:
-    """Records audio from the microphone while triggered.
+    """Records audio from the microphone while triggered."""
 
-    The audio stream is opened once and kept alive for the lifetime of the
-    recorder.  Recording on/off is controlled by a flag so that the OS
-    microphone resource is never repeatedly acquired and released.
-    """
-
-    def __init__(self, config: AudioConfig) -> None:
+    def __init__(
+        self,
+        config: AudioConfig,
+        stream_factory: StreamFactory | None = None,
+    ) -> None:
         self._config = config
         self._frames: list[np.ndarray] = []
         self._frame_count = 0
         self._is_recording = False
-        self._stream: sd.InputStream | None = None
+        self._stream: Any | None = None
+        self._stream_factory = stream_factory or _default_stream_factory
         self._lock = threading.Lock()
         self._max_frames = config.sample_rate * config.max_duration_sec
 
-    def open(self) -> None:
-        """Open the audio stream (call once at startup)."""
-        if self._stream is not None:
-            return
-        try:
-            self._stream = sd.InputStream(
-                samplerate=self._config.sample_rate,
-                channels=self._config.channels,
-                dtype="float32",
-                callback=self._audio_callback,
-                latency="low",
-            )
-            self._stream.start()
-            logger.info("Audio stream opened (rate=%dHz)", self._config.sample_rate)
-        except Exception:
-            logger.exception("Failed to open audio stream")
-
-    def close(self) -> None:
-        """Close the audio stream (call once at shutdown)."""
-        stream = self._stream
-        self._stream = None
-        if stream is not None:
-            try:
-                stream.abort()
-                stream.close()
-            except Exception:
-                logger.exception("Error closing audio stream")
-            logger.info("Audio stream closed")
-
     def start(self) -> None:
-        """Start capturing audio frames."""
+        """Start recording audio."""
         with self._lock:
             if self._is_recording:
                 return
             self._frames = []
             self._frame_count = 0
+
+        rate = self._config.sample_rate
+        max_dur = self._config.max_duration_sec
+        try:
+            stream = self._stream_factory(rate, self._config.channels, self._audio_callback)
+            stream.start()
+        except Exception:
+            logger.exception("Failed to start audio stream")
+            return
+
+        with self._lock:
             self._is_recording = True
-        logger.info("Recording started (max=%ds)", self._config.max_duration_sec)
+            self._stream = stream
+        logger.info("Recording started (rate=%dHz, max=%ds)", rate, max_dur)
 
     def stop(self) -> np.ndarray:
-        """Stop capturing and return audio as numpy array."""
+        """Stop recording and return audio as numpy array.
+
+        Returns:
+            Audio samples as float32 mono numpy array.
+        """
         with self._lock:
             self._is_recording = False
-            frames = self._frames
-            self._frames = []
-            self._frame_count = 0
+            stream = self._stream
+            self._stream = None
 
-        if not frames:
+        if stream is not None:
+            try:
+                stream.stop()
+                stream.close()
+            except Exception:
+                logger.exception("Error closing audio stream")
+
+        if not self._frames:
             logger.warning("No audio frames recorded")
             return np.array([], dtype=np.float32)
 
-        audio = np.concatenate(frames, axis=0).flatten()
+        audio = np.concatenate(self._frames, axis=0).flatten()
         duration = len(audio) / self._config.sample_rate
         logger.info("Recording stopped: %.1fs, %d samples", duration, len(audio))
         return audio
@@ -91,8 +102,9 @@ class AudioRecorder:
         indata: np.ndarray,
         frames: int,
         time_info: object,
-        status: sd.CallbackFlags,
+        status: object,
     ) -> None:
+        del frames, time_info
         if status:
             logger.warning("Audio callback status: %s", status)
         with self._lock:

@@ -1,617 +1,133 @@
-"""Tests for VoxApp pipeline orchestration."""
+"""Tests for VoxApp state transitions and shutdown behavior."""
 
+from __future__ import annotations
+
+import threading
 import time
-from unittest.mock import MagicMock, patch
 
-import numpy as np
-import pytest
-
-from vox.config import AppConfig, LLMConfig, STTConfig
+from vox.app import AppState, VoxApp
+from vox.config import AppConfig
 
 
-@patch("vox.app.TextInserter")
-@patch("vox.app.LLMFormatter")
-@patch("vox.app.create_stt_engine")
-@patch("vox.app.AudioRecorder")
-@patch("vox.app.HotkeyListener")
-def test_pipeline_llm_timeout_falls_back_to_raw_text(
-    mock_hotkey_cls,
-    mock_recorder_cls,
-    mock_stt_factory,
-    mock_llm_cls,
-    mock_inserter_cls,
-):
-    """When LLM raises an exception, the pipeline should fall back to raw STT text."""
-    from vox.app import VoxApp
+class FakeRecorder:
+    def __init__(self) -> None:
+        self.started = 0
+        self.stopped = 0
 
-    config = AppConfig()
+    def start(self) -> None:
+        self.started += 1
 
-    # Set up mock STT engine (text must be >20 chars to avoid LLM skip)
-    mock_stt = MagicMock()
-    mock_stt.transcribe.return_value = "えーとこれはテスト用の長い音声認識テキストです"
-    mock_stt_factory.return_value = mock_stt
-
-    # Set up mock recorder that returns valid audio
-    mock_recorder = MagicMock()
-    mock_recorder.stop.return_value = np.ones(16000, dtype=np.float32)
-    mock_recorder_cls.return_value = mock_recorder
-
-    # Set up mock LLM that raises an exception (simulating timeout)
-    mock_llm = MagicMock()
-    mock_llm.format_text.side_effect = Exception("Request timed out")
-    mock_llm_cls.return_value = mock_llm
-
-    # Set up mock inserter
-    mock_inserter = MagicMock()
-    mock_inserter_cls.return_value = mock_inserter
-
-    app = VoxApp(config)
-
-    # Run the pipeline directly
-    app._process_pipeline()
-
-    # LLM was called with the raw text
-    mock_llm.format_text.assert_called_once_with("えーとこれはテスト用の長い音声認識テキストです")
-
-    # Inserter was called with the raw text as fallback
-    mock_inserter.insert.assert_called_once_with("えーとこれはテスト用の長い音声認識テキストです")
+    def stop(self):
+        self.stopped += 1
+        return []
 
 
-@patch("vox.app.TextInserter")
-@patch("vox.app.LLMFormatter")
-@patch("vox.app.create_stt_engine")
-@patch("vox.app.AudioRecorder")
-@patch("vox.app.HotkeyListener")
-def test_pipeline_llm_success_inserts_formatted_text(
-    mock_hotkey_cls,
-    mock_recorder_cls,
-    mock_stt_factory,
-    mock_llm_cls,
-    mock_inserter_cls,
-):
-    """When LLM succeeds, the pipeline should insert the formatted text."""
-    from vox.app import VoxApp
+class FakeSTT:
+    def load_model(self) -> None:
+        return None
 
-    config = AppConfig()
-
-    mock_stt = MagicMock()
-    mock_stt.transcribe.return_value = "えーと raw text"
-    mock_stt_factory.return_value = mock_stt
-
-    mock_recorder = MagicMock()
-    mock_recorder.stop.return_value = np.ones(16000, dtype=np.float32)
-    mock_recorder_cls.return_value = mock_recorder
-
-    mock_llm = MagicMock()
-    mock_llm.format_text.return_value = "formatted text"
-    mock_llm_cls.return_value = mock_llm
-
-    mock_inserter = MagicMock()
-    mock_inserter_cls.return_value = mock_inserter
-
-    app = VoxApp(config)
-    app._process_pipeline()
-
-    mock_inserter.insert.assert_called_once_with("formatted text")
+    def get_vram_usage_mb(self) -> int:
+        return 1
 
 
-@patch("vox.app.TextInserter")
-@patch("vox.app.LLMFormatter")
-@patch("vox.app.create_stt_engine")
-@patch("vox.app.AudioRecorder")
-@patch("vox.app.HotkeyListener")
-def test_pipeline_empty_audio_skips_processing(
-    mock_hotkey_cls,
-    mock_recorder_cls,
-    mock_stt_factory,
-    mock_llm_cls,
-    mock_inserter_cls,
-):
-    """When recorder returns empty audio, pipeline should skip entirely."""
-    from vox.app import VoxApp
-
-    config = AppConfig()
-
-    mock_stt = MagicMock()
-    mock_stt_factory.return_value = mock_stt
-
-    mock_recorder = MagicMock()
-    mock_recorder.stop.return_value = np.array([], dtype=np.float32)
-    mock_recorder_cls.return_value = mock_recorder
-
-    mock_llm = MagicMock()
-    mock_llm_cls.return_value = mock_llm
-
-    mock_inserter = MagicMock()
-    mock_inserter_cls.return_value = mock_inserter
-
-    app = VoxApp(config)
-    app._process_pipeline()
-
-    # STT and LLM should not be called
-    mock_stt.transcribe.assert_not_called()
-    mock_llm.format_text.assert_not_called()
-    mock_inserter.insert.assert_not_called()
+class FakeLLM:
+    pass
 
 
-# --- start() parallel loading tests ---
+class FakeInserter:
+    pass
 
 
-@patch("vox.app.TextInserter")
-@patch("vox.app.LLMFormatter")
-@patch("vox.app.create_stt_engine")
-@patch("vox.app.AudioRecorder")
-@patch("vox.app.HotkeyListener")
-def test_start_loads_stt_and_warms_llm(
-    mock_hotkey_cls,
-    mock_recorder_cls,
-    mock_stt_factory,
-    mock_llm_cls,
-    mock_inserter_cls,
-):
-    """start() should call load_model() and warmup() in parallel."""
-    from vox.app import VoxApp
+class FakeHotkey:
+    def __init__(self, _config, on_press, on_release) -> None:
+        self.on_press = on_press
+        self.on_release = on_release
+        self.start_calls = 0
+        self.stop_calls = 0
+        self.enabled_values: list[bool] = []
 
-    config = AppConfig()
+    def start(self) -> None:
+        self.start_calls += 1
 
-    mock_stt = MagicMock()
-    mock_stt_factory.return_value = mock_stt
+    def stop(self) -> None:
+        self.stop_calls += 1
 
-    mock_llm = MagicMock()
-    mock_llm_cls.return_value = mock_llm
+    def set_enabled(self, enabled: bool) -> None:
+        self.enabled_values.append(enabled)
 
-    mock_recorder = MagicMock()
-    mock_recorder_cls.return_value = mock_recorder
 
-    mock_hotkey = MagicMock()
-    mock_hotkey_cls.return_value = mock_hotkey
+class FastPipeline:
+    def run_once(self) -> bool:
+        return True
 
-    app = VoxApp(config)
+
+class BlockingPipeline:
+    def __init__(self) -> None:
+        self.started = threading.Event()
+        self.allow_finish = threading.Event()
+
+    def run_once(self) -> bool:
+        self.started.set()
+        self.allow_finish.wait(timeout=1.0)
+        return True
+
+
+def build_app(monkeypatch, pipeline):
+    recorder = FakeRecorder()
+    stt = FakeSTT()
+    hotkey_holder: dict[str, FakeHotkey] = {}
+
+    def fake_create_recorder(_config):
+        return recorder
+
+    def fake_create_stt_engine(_stt_config):
+        return stt
+
+    def fake_hotkey_ctor(config, on_press, on_release):
+        hotkey = FakeHotkey(config, on_press, on_release)
+        hotkey_holder["instance"] = hotkey
+        return hotkey
+
+    monkeypatch.setattr("vox.app._create_recorder", fake_create_recorder)
+    monkeypatch.setattr("vox.app.create_stt_engine", fake_create_stt_engine)
+    monkeypatch.setattr("vox.app.LLMFormatter", lambda _cfg: FakeLLM())
+    monkeypatch.setattr("vox.app.TextInserter", lambda _cfg: FakeInserter())
+    monkeypatch.setattr("vox.app.PipelineRunner", lambda **_kwargs: pipeline)
+    monkeypatch.setattr("vox.app.HotkeyListener", fake_hotkey_ctor)
+
+    app = VoxApp(AppConfig())
+    return app, recorder, stt, hotkey_holder["instance"]
+
+
+def test_stop_is_idempotent(monkeypatch) -> None:
+    app, _recorder, _stt, hotkey = build_app(monkeypatch, FastPipeline())
+
     app.start()
+    app.stop()
+    app.stop()
 
-    mock_stt.load_model.assert_called_once()
-    mock_stt.get_vram_usage_mb.assert_called_once()
-    mock_llm.warmup.assert_called_once()
-    mock_recorder.open.assert_called_once()
-    mock_hotkey.start.assert_called_once()
-
-
-@patch("vox.app.TextInserter")
-@patch("vox.app.LLMFormatter")
-@patch("vox.app.create_stt_engine")
-@patch("vox.app.AudioRecorder")
-@patch("vox.app.HotkeyListener")
-def test_start_stt_failure_propagates(
-    mock_hotkey_cls,
-    mock_recorder_cls,
-    mock_stt_factory,
-    mock_llm_cls,
-    mock_inserter_cls,
-):
-    """When STT load_model() fails, start() should raise and not open recorder/hotkey."""
-    from vox.app import VoxApp
-
-    config = AppConfig()
-
-    mock_stt = MagicMock()
-    mock_stt.load_model.side_effect = RuntimeError("CUDA out of memory")
-    mock_stt_factory.return_value = mock_stt
-
-    mock_llm = MagicMock()
-    mock_llm_cls.return_value = mock_llm
-
-    mock_recorder = MagicMock()
-    mock_recorder_cls.return_value = mock_recorder
-
-    mock_hotkey = MagicMock()
-    mock_hotkey_cls.return_value = mock_hotkey
-
-    app = VoxApp(config)
-
-    with pytest.raises(RuntimeError, match="CUDA out of memory"):
-        app.start()
-
-    mock_recorder.open.assert_not_called()
-    mock_hotkey.start.assert_not_called()
+    assert app._state == AppState.STOPPED
+    assert hotkey.stop_calls == 1
+    assert hotkey.enabled_values[-1] is False
 
 
-@patch("vox.app.TextInserter")
-@patch("vox.app.LLMFormatter")
-@patch("vox.app.create_stt_engine")
-@patch("vox.app.AudioRecorder")
-@patch("vox.app.HotkeyListener")
-def test_start_llm_warmup_failure_does_not_crash(
-    mock_hotkey_cls,
-    mock_recorder_cls,
-    mock_stt_factory,
-    mock_llm_cls,
-    mock_inserter_cls,
-):
-    """When LLM warmup() fails, start() should still succeed."""
-    from vox.app import VoxApp
+def test_stop_during_processing_keeps_hotkey_disabled(monkeypatch) -> None:
+    pipeline = BlockingPipeline()
+    app, _recorder, _stt, hotkey = build_app(monkeypatch, pipeline)
 
-    config = AppConfig()
-
-    mock_stt = MagicMock()
-    mock_stt_factory.return_value = mock_stt
-
-    mock_llm = MagicMock()
-    mock_llm.warmup.side_effect = ConnectionError("Ollama not running")
-    mock_llm_cls.return_value = mock_llm
-
-    mock_recorder = MagicMock()
-    mock_recorder_cls.return_value = mock_recorder
-
-    mock_hotkey = MagicMock()
-    mock_hotkey_cls.return_value = mock_hotkey
-
-    app = VoxApp(config)
     app.start()
-
-    mock_stt.load_model.assert_called_once()
-    mock_recorder.open.assert_called_once()
-    mock_hotkey.start.assert_called_once()
-
-
-# --- Word replacement tests ---
-
-
-@patch("vox.app.TextInserter")
-@patch("vox.app.LLMFormatter")
-@patch("vox.app.create_stt_engine")
-@patch("vox.app.AudioRecorder")
-@patch("vox.app.HotkeyListener")
-def test_apply_word_replacements_unit(
-    mock_hotkey_cls,
-    mock_recorder_cls,
-    mock_stt_factory,
-    mock_llm_cls,
-    mock_inserter_cls,
-):
-    """_apply_word_replacements should replace all configured words."""
-    from vox.app import VoxApp
-
-    config = AppConfig(
-        stt=STTConfig(word_replacements={"クロードコード": "Claude Code", "ギットハブ": "GitHub"})
-    )
-    mock_stt_factory.return_value = MagicMock()
-    mock_llm_cls.return_value = MagicMock()
-    mock_inserter_cls.return_value = MagicMock()
-
-    app = VoxApp(config)
-    result = app._apply_word_replacements("クロードコードを使ってギットハブにプッシュ")
-    assert result == "Claude Codeを使ってGitHubにプッシュ"
-
-
-@patch("vox.app.TextInserter")
-@patch("vox.app.LLMFormatter")
-@patch("vox.app.create_stt_engine")
-@patch("vox.app.AudioRecorder")
-@patch("vox.app.HotkeyListener")
-def test_apply_word_replacements_no_match(
-    mock_hotkey_cls,
-    mock_recorder_cls,
-    mock_stt_factory,
-    mock_llm_cls,
-    mock_inserter_cls,
-):
-    """When no replacements match, text is returned unchanged."""
-    from vox.app import VoxApp
-
-    config = AppConfig(
-        stt=STTConfig(word_replacements={"クロードコード": "Claude Code"})
-    )
-    mock_stt_factory.return_value = MagicMock()
-    mock_llm_cls.return_value = MagicMock()
-    mock_inserter_cls.return_value = MagicMock()
-
-    app = VoxApp(config)
-    assert app._apply_word_replacements("テスト文章です") == "テスト文章です"
-
-
-@patch("vox.app.TextInserter")
-@patch("vox.app.LLMFormatter")
-@patch("vox.app.create_stt_engine")
-@patch("vox.app.AudioRecorder")
-@patch("vox.app.HotkeyListener")
-def test_pipeline_applies_word_replacements(
-    mock_hotkey_cls,
-    mock_recorder_cls,
-    mock_stt_factory,
-    mock_llm_cls,
-    mock_inserter_cls,
-):
-    """Pipeline should apply word replacements to STT output before LLM."""
-    from vox.app import VoxApp
-
-    config = AppConfig(
-        stt=STTConfig(word_replacements={"クロードコード": "Claude Code"}),
-    )
-
-    mock_stt = MagicMock()
-    mock_stt.transcribe.return_value = "クロードコードを使って開発しています"
-    mock_stt_factory.return_value = mock_stt
-
-    mock_recorder = MagicMock()
-    mock_recorder.stop.return_value = np.ones(16000, dtype=np.float32)
-    mock_recorder_cls.return_value = mock_recorder
-
-    mock_llm = MagicMock()
-    mock_llm.format_text.return_value = "Claude Codeを使って開発しています。"
-    mock_llm_cls.return_value = mock_llm
-
-    mock_inserter = MagicMock()
-    mock_inserter_cls.return_value = mock_inserter
-
-    app = VoxApp(config)
-    app._process_pipeline()
-
-    # LLM should receive the replaced text
-    mock_llm.format_text.assert_called_once_with("Claude Codeを使って開発しています")
-    mock_inserter.insert.assert_called_once_with("Claude Codeを使って開発しています。")
-
-
-# --- LLM disabled tests ---
-
-
-@patch("vox.app.TextInserter")
-@patch("vox.app.LLMFormatter")
-@patch("vox.app.create_stt_engine")
-@patch("vox.app.AudioRecorder")
-@patch("vox.app.HotkeyListener")
-def test_pipeline_llm_disabled_inserts_raw_stt_text(
-    mock_hotkey_cls,
-    mock_recorder_cls,
-    mock_stt_factory,
-    mock_llm_cls,
-    mock_inserter_cls,
-):
-    """When llm.enabled=False, pipeline should skip LLM and insert raw STT text."""
-    from vox.app import VoxApp
-
-    config = AppConfig(llm=LLMConfig(enabled=False))
-
-    mock_stt = MagicMock()
-    mock_stt.transcribe.return_value = "えーとこれはテスト用の長い音声認識テキストです"
-    mock_stt_factory.return_value = mock_stt
-
-    mock_recorder = MagicMock()
-    mock_recorder.stop.return_value = np.ones(16000, dtype=np.float32)
-    mock_recorder_cls.return_value = mock_recorder
-
-    mock_llm = MagicMock()
-    mock_llm_cls.return_value = mock_llm
-
-    mock_inserter = MagicMock()
-    mock_inserter_cls.return_value = mock_inserter
-
-    app = VoxApp(config)
-    app._process_pipeline()
-
-    # LLM should NOT be called
-    mock_llm.format_text.assert_not_called()
-
-    # Inserter should receive the raw STT text
-    mock_inserter.insert.assert_called_once_with("えーとこれはテスト用の長い音声認識テキストです")
-
-
-@patch("vox.app.TextInserter")
-@patch("vox.app.LLMFormatter")
-@patch("vox.app.create_stt_engine")
-@patch("vox.app.AudioRecorder")
-@patch("vox.app.HotkeyListener")
-def test_start_llm_disabled_skips_warmup(
-    mock_hotkey_cls,
-    mock_recorder_cls,
-    mock_stt_factory,
-    mock_llm_cls,
-    mock_inserter_cls,
-):
-    """When llm.enabled=False, start() should skip LLM warmup."""
-    from vox.app import VoxApp
-
-    config = AppConfig(llm=LLMConfig(enabled=False))
-
-    mock_stt = MagicMock()
-    mock_stt_factory.return_value = mock_stt
-
-    mock_llm = MagicMock()
-    mock_llm_cls.return_value = mock_llm
-
-    mock_recorder = MagicMock()
-    mock_recorder_cls.return_value = mock_recorder
-
-    mock_hotkey = MagicMock()
-    mock_hotkey_cls.return_value = mock_hotkey
-
-    app = VoxApp(config)
-    app.start()
-
-    mock_stt.load_model.assert_called_once()
-    mock_llm.warmup.assert_not_called()
-    mock_recorder.open.assert_called_once()
-    mock_hotkey.start.assert_called_once()
-
-
-# --- Duplicate insertion prevention tests ---
-
-
-@patch("vox.app.TextInserter")
-@patch("vox.app.LLMFormatter")
-@patch("vox.app.create_stt_engine")
-@patch("vox.app.AudioRecorder")
-@patch("vox.app.HotkeyListener")
-def test_release_without_press_is_ignored(
-    mock_hotkey_cls,
-    mock_recorder_cls,
-    mock_stt_factory,
-    mock_llm_cls,
-    mock_inserter_cls,
-):
-    """_on_key_release without prior _on_key_press should be a no-op."""
-    from vox.app import VoxApp
-
-    config = AppConfig()
-
-    mock_recorder = MagicMock()
-    mock_recorder_cls.return_value = mock_recorder
-
-    mock_stt_factory.return_value = MagicMock()
-    mock_llm_cls.return_value = MagicMock()
-    mock_inserter_cls.return_value = MagicMock()
-
-    mock_hotkey = MagicMock()
-    mock_hotkey_cls.return_value = mock_hotkey
-
-    app = VoxApp(config)
-
-    # Call release without press — should be ignored
+    app._on_key_press()
     app._on_key_release()
 
-    # No pipeline thread should have been started
-    assert app._worker is None
-    mock_recorder.stop.assert_not_called()
-    mock_hotkey.set_enabled.assert_not_called()
+    assert pipeline.started.wait(timeout=1.0)
+    assert app._state == AppState.PROCESSING
 
+    stopper = threading.Thread(target=app.stop)
+    stopper.start()
+    time.sleep(0.05)
+    pipeline.allow_finish.set()
+    stopper.join(timeout=1.0)
 
-@patch("vox.app.TextInserter")
-@patch("vox.app.LLMFormatter")
-@patch("vox.app.create_stt_engine")
-@patch("vox.app.AudioRecorder")
-@patch("vox.app.HotkeyListener")
-def test_key_press_during_cooldown_is_ignored(
-    mock_hotkey_cls,
-    mock_recorder_cls,
-    mock_stt_factory,
-    mock_llm_cls,
-    mock_inserter_cls,
-):
-    """Key press within cooldown window after pipeline end should be ignored."""
-    from vox.app import VoxApp
-
-    config = AppConfig()
-
-    mock_recorder = MagicMock()
-    mock_recorder.stop.return_value = np.ones(16000, dtype=np.float32)
-    mock_recorder_cls.return_value = mock_recorder
-
-    mock_stt = MagicMock()
-    mock_stt.transcribe.return_value = "テスト"
-    mock_stt_factory.return_value = mock_stt
-
-    mock_llm = MagicMock()
-    mock_llm_cls.return_value = mock_llm
-
-    mock_inserter = MagicMock()
-    mock_inserter_cls.return_value = mock_inserter
-
-    mock_hotkey = MagicMock()
-    mock_hotkey_cls.return_value = mock_hotkey
-
-    app = VoxApp(config)
-
-    # Simulate pipeline just finished
-    app._last_pipeline_end = time.monotonic()
-
-    # Key press during cooldown should be ignored
-    app._on_key_press()
-
-    # recorder.start() should NOT have been called
-    mock_recorder.start.assert_not_called()
-    assert app._recording_active is False
-
-
-# --- Regex word replacement tests ---
-
-
-@patch("vox.app.TextInserter")
-@patch("vox.app.LLMFormatter")
-@patch("vox.app.create_stt_engine")
-@patch("vox.app.AudioRecorder")
-@patch("vox.app.HotkeyListener")
-def test_regex_word_replacement(
-    mock_hotkey_cls,
-    mock_recorder_cls,
-    mock_stt_factory,
-    mock_llm_cls,
-    mock_inserter_cls,
-):
-    """Regex patterns (wrapped in /.../) should be applied via re.sub."""
-    from vox.app import VoxApp
-
-    config = AppConfig(
-        stt=STTConfig(
-            word_replacements={
-                "/クロード(?:エ|え)(?:ム|む)(?:ディ|でぃ)ー?/": "CLAUDE.md",
-                "ギットハブ": "GitHub",
-            }
-        )
-    )
-    mock_stt_factory.return_value = MagicMock()
-    mock_llm_cls.return_value = MagicMock()
-    mock_inserter_cls.return_value = MagicMock()
-
-    app = VoxApp(config)
-    assert app._apply_word_replacements("クロードエムディーを確認") == "CLAUDE.mdを確認"
-    assert app._apply_word_replacements("クロードえむでぃを確認") == "CLAUDE.mdを確認"
-    assert app._apply_word_replacements("ギットハブにプッシュ") == "GitHubにプッシュ"
-
-
-@patch("vox.app.TextInserter")
-@patch("vox.app.LLMFormatter")
-@patch("vox.app.create_stt_engine")
-@patch("vox.app.AudioRecorder")
-@patch("vox.app.HotkeyListener")
-def test_regex_and_plain_replacements_coexist(
-    mock_hotkey_cls,
-    mock_recorder_cls,
-    mock_stt_factory,
-    mock_llm_cls,
-    mock_inserter_cls,
-):
-    """Both regex and plain-string replacements should work in the same config."""
-    from vox.app import VoxApp
-
-    config = AppConfig(
-        stt=STTConfig(
-            word_replacements={
-                "/タイプ\\s*スクリプト/": "TypeScript",
-                "クロードコード": "Claude Code",
-            }
-        )
-    )
-    mock_stt_factory.return_value = MagicMock()
-    mock_llm_cls.return_value = MagicMock()
-    mock_inserter_cls.return_value = MagicMock()
-
-    app = VoxApp(config)
-    result = app._apply_word_replacements("クロードコードでタイプ スクリプトを書く")
-    assert result == "Claude CodeでTypeScriptを書く"
-
-
-@patch("vox.app.TextInserter")
-@patch("vox.app.LLMFormatter")
-@patch("vox.app.create_stt_engine")
-@patch("vox.app.AudioRecorder")
-@patch("vox.app.HotkeyListener")
-def test_regex_replacement_no_match(
-    mock_hotkey_cls,
-    mock_recorder_cls,
-    mock_stt_factory,
-    mock_llm_cls,
-    mock_inserter_cls,
-):
-    """Regex that doesn't match should leave text unchanged."""
-    from vox.app import VoxApp
-
-    config = AppConfig(
-        stt=STTConfig(
-            word_replacements={"/クロード(?:エ|え)(?:ム|む)(?:ディ|でぃ)/": "CLAUDE.md"}
-        )
-    )
-    mock_stt_factory.return_value = MagicMock()
-    mock_llm_cls.return_value = MagicMock()
-    mock_inserter_cls.return_value = MagicMock()
-
-    app = VoxApp(config)
-    assert app._apply_word_replacements("テスト文章です") == "テスト文章です"
+    assert not stopper.is_alive()
+    assert app._state == AppState.STOPPED
+    assert hotkey.enabled_values[-1] is False

@@ -1,111 +1,107 @@
-"""Tests for text insertion (paste method selection logic)."""
+﻿"""Tests for TextInserter abstractions and error handling."""
 
-from unittest.mock import MagicMock, patch
+import pytest
 
 from vox.config import InsertionConfig
-from vox.inserter import TextInserter, _is_chromium_window
-
-# ---------------------------------------------------------------------------
-# _is_chromium_window detection
-# ---------------------------------------------------------------------------
+from vox.inserter import ClipboardAccessError, PasteActionError, TextInserter
 
 
-@patch("vox.inserter._get_foreground_class_name")
-def test_is_chromium_window_chrome(mock_class_name: MagicMock):
-    mock_class_name.return_value = "Chrome_WidgetWin_1"
-    assert _is_chromium_window() is True
+class FakeClipboard:
+    def __init__(self, initial: str = "old") -> None:
+        self.buffer = initial
+        self.history: list[str] = []
+        self.raise_on_paste = False
+        self.raise_on_copy = False
+
+    def paste(self) -> str:
+        if self.raise_on_paste:
+            raise RuntimeError("cannot read")
+        return self.buffer
+
+    def copy(self, text: str) -> None:
+        if self.raise_on_copy:
+            raise RuntimeError("cannot write")
+        self.buffer = text
+        self.history.append(text)
 
 
-@patch("vox.inserter._get_foreground_class_name")
-def test_is_chromium_window_notepad(mock_class_name: MagicMock):
-    mock_class_name.return_value = "Notepad"
-    assert _is_chromium_window() is False
+class FakePasteController:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.raise_on_paste = False
+
+    def paste(self) -> None:
+        self.calls += 1
+        if self.raise_on_paste:
+            raise RuntimeError("paste failed")
 
 
-@patch("vox.inserter._get_foreground_class_name")
-def test_is_chromium_window_empty(mock_class_name: MagicMock):
-    mock_class_name.return_value = ""
-    assert _is_chromium_window() is False
+def build_inserter(clipboard: FakeClipboard, paste: FakePasteController) -> TextInserter:
+    return TextInserter(
+        InsertionConfig(),
+        clipboard=clipboard,
+        paste_controller=paste,
+        sleep_fn=lambda _v: None,
+    )
 
 
-# ---------------------------------------------------------------------------
-# TextInserter.insert — paste method selection
-# ---------------------------------------------------------------------------
+def test_insert_empty_text_skips() -> None:
+    clipboard = FakeClipboard()
+    paste = FakePasteController()
+    inserter = build_inserter(clipboard, paste)
 
-
-@patch("vox.inserter._send_ctrl_v")
-@patch("vox.inserter._get_focused_hwnd", return_value=0x1234)
-@patch("vox.inserter._set_clipboard_text")
-@patch("vox.inserter._get_clipboard_text", return_value=None)
-@patch("vox.inserter._is_chromium_window", return_value=True)
-def test_auto_mode_chromium_uses_ctrl_v(
-    _mock_is_chromium: MagicMock,
-    _mock_get_cb: MagicMock,
-    _mock_set_cb: MagicMock,
-    _mock_focused: MagicMock,
-    mock_ctrl_v: MagicMock,
-):
-    config = InsertionConfig(method="auto", pre_paste_delay_ms=0)
-    inserter = TextInserter(config)
-    inserter.insert("hello")
-    mock_ctrl_v.assert_called_once()
-
-
-@patch("vox.inserter.user32")
-@patch("vox.inserter._get_focused_hwnd", return_value=0x1234)
-@patch("vox.inserter._set_clipboard_text")
-@patch("vox.inserter._get_clipboard_text", return_value=None)
-@patch("vox.inserter._is_chromium_window", return_value=False)
-def test_auto_mode_native_uses_wm_paste(
-    _mock_is_chromium: MagicMock,
-    _mock_get_cb: MagicMock,
-    _mock_set_cb: MagicMock,
-    mock_focused: MagicMock,
-    mock_user32: MagicMock,
-):
-    config = InsertionConfig(method="auto", pre_paste_delay_ms=0)
-    inserter = TextInserter(config)
-    inserter.insert("hello")
-    mock_user32.SendMessageW.assert_called_once_with(0x1234, 0x0302, 0, 0)
-
-
-@patch("vox.inserter.user32")
-@patch("vox.inserter._get_focused_hwnd", return_value=0x1234)
-@patch("vox.inserter._set_clipboard_text")
-@patch("vox.inserter._get_clipboard_text", return_value=None)
-def test_wm_paste_forced(
-    _mock_get_cb: MagicMock,
-    _mock_set_cb: MagicMock,
-    mock_focused: MagicMock,
-    mock_user32: MagicMock,
-):
-    config = InsertionConfig(method="wm_paste", pre_paste_delay_ms=0)
-    inserter = TextInserter(config)
-    inserter.insert("hello")
-    mock_user32.SendMessageW.assert_called_once_with(0x1234, 0x0302, 0, 0)
-
-
-@patch("vox.inserter._send_ctrl_v")
-@patch("vox.inserter._set_clipboard_text")
-@patch("vox.inserter._get_clipboard_text", return_value=None)
-def test_ctrl_v_forced(
-    _mock_get_cb: MagicMock,
-    _mock_set_cb: MagicMock,
-    mock_ctrl_v: MagicMock,
-):
-    config = InsertionConfig(method="ctrl_v", pre_paste_delay_ms=0)
-    inserter = TextInserter(config)
-    inserter.insert("hello")
-    mock_ctrl_v.assert_called_once()
-
-
-@patch("vox.inserter._set_clipboard_text")
-@patch("vox.inserter._get_clipboard_text", return_value=None)
-def test_insert_empty_text_skips(
-    _mock_get_cb: MagicMock,
-    mock_set_cb: MagicMock,
-):
-    config = InsertionConfig(pre_paste_delay_ms=0)
-    inserter = TextInserter(config)
     inserter.insert("")
-    mock_set_cb.assert_not_called()
+
+    assert paste.calls == 0
+    assert clipboard.history == []
+
+
+def test_insert_success_with_restore() -> None:
+    clipboard = FakeClipboard(initial="original")
+    paste = FakePasteController()
+    inserter = build_inserter(clipboard, paste)
+
+    inserter.insert("new text")
+
+    assert paste.calls == 1
+    assert clipboard.history == ["new text", "original"]
+    assert clipboard.buffer == "original"
+
+
+def test_insert_without_clipboard_capture_still_pastes() -> None:
+    clipboard = FakeClipboard(initial="original")
+    clipboard.raise_on_paste = True
+    paste = FakePasteController()
+    inserter = build_inserter(clipboard, paste)
+
+    inserter.insert("new text")
+
+    assert paste.calls == 1
+    assert clipboard.history == ["new text"]
+    assert clipboard.buffer == "new text"
+
+
+def test_insert_raises_on_clipboard_write_failure() -> None:
+    clipboard = FakeClipboard()
+    clipboard.raise_on_copy = True
+    paste = FakePasteController()
+    inserter = build_inserter(clipboard, paste)
+
+    with pytest.raises(ClipboardAccessError):
+        inserter.insert("new text")
+
+    assert paste.calls == 0
+
+
+def test_insert_raises_on_paste_failure_and_restores() -> None:
+    clipboard = FakeClipboard(initial="original")
+    paste = FakePasteController()
+    paste.raise_on_paste = True
+    inserter = build_inserter(clipboard, paste)
+
+    with pytest.raises(PasteActionError):
+        inserter.insert("new text")
+
+    assert paste.calls == 1
+    assert clipboard.history == ["new text", "original"]
+    assert clipboard.buffer == "original"

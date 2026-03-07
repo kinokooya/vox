@@ -1,9 +1,9 @@
-"""Configuration management using Pydantic + YAML."""
+﻿"""Configuration management using Pydantic + YAML."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field
@@ -19,17 +19,7 @@ class FasterWhisperConfig(BaseModel):
     device: str = "cuda"
     compute_type: str = "float16"
     language: str = "ja"
-    beam_size: int = Field(default=5, ge=1, le=10)
-    condition_on_previous_text: bool = False
-    no_speech_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
-    log_prob_threshold: float = Field(default=-0.5, ge=-5.0, le=0.0)
-    compression_ratio_threshold: float = Field(default=2.0, gt=0.0)
-    hallucination_silence_threshold: float | None = Field(default=2.0, ge=0.0)
-    initial_prompt: str | None = None
-    hotwords: str | None = None
-    repetition_penalty: float = Field(default=1.0, ge=0.0)
-    patience: float = Field(default=1.0, ge=0.0)
-    vad: VADConfig = VADConfig()
+    vad: VADConfig = Field(default_factory=VADConfig)
 
 
 class SenseVoiceConfig(BaseModel):
@@ -40,22 +30,19 @@ class SenseVoiceConfig(BaseModel):
 
 class STTConfig(BaseModel):
     engine: str = "faster-whisper"
-    word_replacements: dict[str, str] = Field(default_factory=dict)
-    faster_whisper: FasterWhisperConfig = FasterWhisperConfig()
-    sensevoice: SenseVoiceConfig = SenseVoiceConfig()
+    faster_whisper: FasterWhisperConfig = Field(default_factory=FasterWhisperConfig)
+    sensevoice: SenseVoiceConfig = Field(default_factory=SenseVoiceConfig)
 
 
 class LLMConfig(BaseModel):
-    enabled: bool = True
     backend: str = "ollama"
-    model: str = "qwen3:8b"
+    model: str = "qwen2.5:7b-instruct-q4_K_M"
     base_url: str = "http://localhost:11434/v1"
     temperature: float = Field(default=0.3, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=512, gt=0)
-    timeout_sec: float = Field(default=30.0, gt=0)
-    output_format: str = Field(default="single_line")
-    skip_short: bool = True
-    skip_short_max_chars: int = Field(default=20, gt=0)
+    max_tokens: int = Field(default=1024, gt=0)
+    request_timeout_sec: float = Field(default=20.0, gt=0)
+    retry_count: int = Field(default=2, ge=0, le=10)
+    retry_backoff_sec: float = Field(default=0.3, ge=0.0)
 
 
 class HotkeyConfig(BaseModel):
@@ -66,35 +53,37 @@ class AudioConfig(BaseModel):
     sample_rate: int = Field(default=16000, gt=0)
     channels: int = Field(default=1, gt=0)
     max_duration_sec: int = Field(default=60, gt=0)
-    min_duration_sec: float = Field(default=0.5, ge=0.0)
 
 
 class InsertionConfig(BaseModel):
-    method: Literal["auto", "wm_paste", "ctrl_v"] = "auto"
     pre_paste_delay_ms: int = Field(default=50, ge=0)
     restore_clipboard: bool = True
 
 
-class MediaConfig(BaseModel):
-    enabled: bool = False
-    peak_threshold: float = Field(default=0.01, ge=0.0, le=1.0)
-
-
 class AppConfig(BaseModel):
-    stt: STTConfig = STTConfig()
-    llm: LLMConfig = LLMConfig()
-    hotkey: HotkeyConfig = HotkeyConfig()
-    audio: AudioConfig = AudioConfig()
-    insertion: InsertionConfig = InsertionConfig()
-    media: MediaConfig = MediaConfig()
+    stt: STTConfig = Field(default_factory=STTConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
+    hotkey: HotkeyConfig = Field(default_factory=HotkeyConfig)
+    audio: AudioConfig = Field(default_factory=AudioConfig)
+    insertion: InsertionConfig = Field(default_factory=InsertionConfig)
 
 
 def load_config(path: Path | None = None) -> AppConfig:
     """Load configuration from YAML file. Falls back to defaults if file not found."""
     if path is None:
         path = Path("config.yaml")
-    if path.exists():
-        with open(path, encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-        return AppConfig(**data)
-    return AppConfig()
+
+    if not path.exists():
+        return AppConfig()
+
+    with path.open(encoding="utf-8") as f:
+        loaded = yaml.safe_load(f)
+
+    if loaded is None:
+        data: dict[str, Any] = {}
+    elif isinstance(loaded, dict):
+        data = loaded
+    else:
+        raise ValueError("Config file must contain a YAML mapping at the root")
+
+    return AppConfig(**data)
