@@ -1,7 +1,7 @@
 # Vox 開発引き継ぎドキュメント
 
 > このファイルは WSL2 上の開発セッションから Windows 上の次セッションへの引き継ぎ用です。
-> **最終更新**: 2025-02-19 (WSL2 上で Phase 1 MVP 完了)
+> **最終更新**: 2026-03-01 (メディア自動一時停止機能追加)
 
 ---
 
@@ -15,13 +15,13 @@
 | 2 | CLAUDE.md + GitHub Actions CI (.github/workflows/ci.yml) | `ef2f492` |
 | 3 | Phase 1 MVP 全モジュール実装 | `be6609a` |
 | 4 | Codex によるコードレビュー → 指摘修正 (HIGH×3, MEDIUM×4, LOW×3) | `1e2cfe1` |
+| 5 | Windows 実機テスト + ランタイム修正 (alt_gr対応, CUDA DLL自動登録, 常時ストリーム, LLMタイムアウト) | `2667e6c` |
+| 6 | メディア自動一時停止: WASAPI ピーク検出 + VK_MEDIA_PLAY_PAUSE で録音中にメディア再生を自動停止・再開 | — |
 
 ### 未実施
 
-- **Windows 実機テスト** — WSL2 ではマイク/クリップボード/Win32 API が動かないため未検証
-- **Ollama との結合テスト** — Ollama サーバーが未起動のため未検証
-- **faster-whisper モデルロード** — GPU 実機が必要
 - **Phase 2 以降の実装**
+- **テスト追加 (alt_gr, LLMタイムアウトフォールバック)**
 
 ---
 
@@ -44,16 +44,26 @@ vox/
 │   ├── hotkey.py                    # HotkeyListener: pynput右Alt Hold検出
 │   ├── inserter.py                  # TextInserter: clipboard + Win32 Ctrl+V
 │   ├── llm.py                       # LLMFormatter: OpenAI互換API呼び出し
+│   ├── media.py                     # MediaController: 録音中メディア自動一時停止
 │   ├── recorder.py                  # AudioRecorder: sounddevice録音
 │   └── stt/
 │       ├── __init__.py              # 公開API: STTEngine, create_stt_engine
 │       ├── base.py                  # STTEngine ABC (抽象基底クラス)
 │       ├── factory.py               # エンジンファクトリ (config → 実装選択)
 │       └── faster_whisper_engine.py # FasterWhisperEngine 実装
-└── tests/
-    ├── test_config.py               # 設定テスト (6件)
-    ├── test_llm.py                  # LLMフォーマッタテスト (3件)
-    └── test_stt.py                  # STTインターフェーステスト (4件)
+├── start.bat                       # Windows ショートカット用起動スクリプト
+├── start.sh                        # bash 用起動スクリプト
+├── stop.bat                        # プロセス終了スクリプト (PIDファイル経由)
+└── tests/                          # テスト (134件)
+    ├── test_app.py                  # パイプライン統合テスト
+    ├── test_config.py               # 設定テスト
+    ├── test_hallucination.py        # ハルシネーション検出テスト
+    ├── test_hotkey.py               # ホットキーテスト
+    ├── test_llm.py                  # LLMフォーマッタテスト
+    ├── test_media.py                # メディア自動停止テスト
+    ├── test_pipeline_improvements.py # パイプライン改善テスト
+    ├── test_recorder.py             # 録音テスト
+    └── test_stt.py                  # STTインターフェーステスト
 ```
 
 ---
@@ -63,8 +73,9 @@ vox/
 ### 処理パイプライン
 
 ```
-右Alt押下 → AudioRecorder.start()
+右Alt押下 → AudioRecorder.start() → MediaController.pause_if_playing()
 右Alt解放 → AudioRecorder.stop() → STTEngine.transcribe() → LLMFormatter.format_text() → TextInserter.insert()
+         → (finally) MediaController.resume_if_we_paused()
 ```
 
 - `VoxApp` (app.py) がオーケストレータ
@@ -96,8 +107,8 @@ STTEngine (ABC)
 ### セットアップ
 
 ```powershell
-# 1. Python 3.11+ を確認（なければ https://python.org からインストール）
-python --version
+# 1. Python 3.12 インストール (winget 経由)
+winget install Python.Python.3.12
 
 # 2. プロジェクトを取得
 # WSL から: \\wsl$\Ubuntu\home\above0821\projects\vox を C:\Users\<user>\projects\vox にコピー
@@ -109,16 +120,20 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install -e ".[dev]"
 
-# 4. Ollama インストール + モデル取得
+# 4. CUDA ランタイムインストール (pip 経由)
+pip install nvidia-cublas-cu12 nvidia-cuda-runtime-cu12
+# ※ アプリ起動時に CUDA DLL パスを自動登録するため、手動の PATH 設定は不要
+
+# 5. Ollama インストール + モデル取得
 # https://ollama.com からインストーラをダウンロード・実行
 ollama pull qwen2.5:7b-instruct-q4_K_M
 # Ollama はインストール後自動的にバックグラウンドで起動する
 
-# 5. テスト実行（環境確認）
+# 6. テスト実行（環境確認）
 pytest tests/ -v
 ruff check src/
 
-# 6. アプリ起動
+# 7. アプリ起動
 python -m vox
 # → 「=== Vox ready — press and hold alt_r to speak ===」が出れば成功
 # → 右Altを押しながら話し、離すとパイプラインが実行される
@@ -141,9 +156,7 @@ python -m vox
 
 ### 即座に必要
 
-1. **Windows 実機で `python -m vox` を起動して動作確認**
-2. 動かない場合はエラーを見て修正
-3. 動いたら実際にマイクで話して E2E テスト
+1. Phase 2 タスクに着手
 
 ### Phase 2 タスク（要件定義書 Section 7 参照）
 
@@ -182,3 +195,9 @@ Codex による自動レビューで以下を修正済み：
 | パイプラインを別スレッド実行 | ホットキーリスナーをブロックしないため |
 | Win32 keybd_event で Ctrl+V | pyautogui より軽量。フォーカスを奪わない |
 | Pydantic + YAML | 型安全 + 人間が読み書きしやすい設定ファイル |
+| alt_r を alt_gr にもマッチ | Windows の多くのキーボードが右Alt を AltGr として送信するため |
+| デフォルトトリガーを ctrl_r に変更 | Alt 系はエディタのメニューと競合するため |
+| オーディオストリーム常時保持 | 毎回の作成・破棄による OS マイクインジケーターのラグを解消するため |
+| CUDA DLL パスを起動時に自動登録 | pip でインストールした nvidia パッケージの DLL を ctranslate2 が見つけられるようにするため |
+| LLM 30秒タイムアウト + 生テキストフォールバック | LLM が固まっても入力を失わないため |
+| WASAPI ピーク検出 + VK_MEDIA_PLAY_PAUSE | pycaw は「消音」で再生位置が進む。WinRT SMTC は重い。ピーク検出で「今音が出ているか」を判定し、トグルキーの誤動作を防止 |

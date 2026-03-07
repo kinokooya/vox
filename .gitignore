@@ -13,7 +13,9 @@ build/
 venv/
 env/
 
-# IDE
+# IDE / tools
+.claude/
+.serena/
 .vscode/
 .idea/
 *.swp
@@ -37,12 +39,28 @@ models/
 *.mp3
 *.flac
 
+# Benchmark data (audio recordings and results)
+benchmarks/audio/
+benchmarks/results/
+
 # Environment
 .env
 .env.local
 
 # Logs
 *.log
+
+# PID files
+*.pid
+
+# Docs (non-tracked)
+docs/workflow-improvements.md
+docs/*.html
+
+# Testing / linting caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Distribution
 *.whl
